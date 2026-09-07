@@ -2,7 +2,7 @@
   'use strict';
   const load=(src,done)=>{
     const s=document.createElement('script');
-    s.src=src+'?v=20260907-covers-green-overflow';
+    s.src=src+'?v=20260907-report-export-delete-colors';
     if(done)s.onload=done;
     document.head.appendChild(s);
   };
