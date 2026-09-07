@@ -3,9 +3,9 @@
   document.title='阅迹';
   const load=(src,done)=>{
     const s=document.createElement('script');
-    s.src=src+'?v=20260907-cover-calendar-title';
+    s.src=src+'?v=20260907-onboarding-empty';
     if(done)s.onload=done;
     document.head.appendChild(s);
   };
-  load('yueji-weread-evidence.js',()=>load('yueji-fix-core.js',()=>load('yueji-layout.js',()=>load('yueji-book-cover.js'))));
+  load('yueji-weread-evidence.js',()=>load('yueji-fix-core.js',()=>load('yueji-layout.js',()=>load('yueji-book-cover.js',()=>load('yueji-onboarding.js')))));
 })();
