@@ -42,10 +42,13 @@ export default async (request) => {
     return json({ message: "这个微信读书接口不在阅迹允许列表中" }, 403);
   }
 
+  // WeRead's current official Skill version is 1.0.4.
+  // Force the proxy to report the supported version even if an older cached
+  // front-end sends another value.
   const safePayload = {
     ...payload,
     api_name: apiName,
-    skill_version: String(payload?.skill_version || "1.0.5")
+    skill_version: "1.0.4"
   };
 
   try {
