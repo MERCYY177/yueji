@@ -1,8 +1,8 @@
 (()=>{
   'use strict';
-  const load=(src,done)=>{
+  const load=(src,done,version='20260907-weread-evidence2')=>{
     const s=document.createElement('script');
-    s.src=src+'?v=20260907-weread-evidence';
+    s.src=src+'?v='+version;
     if(done)s.onload=done;
     document.head.appendChild(s);
   };
