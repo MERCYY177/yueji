@@ -1,8 +1,7 @@
 (()=>{
   'use strict';
 
-  const GUIDE_KEY='yueji-onboarding-seen-v1';
-  const ALLOW_DEMO_KEY='yueji-allow-demo-v1';
+  const GUIDE_KEY='yueji-onboarding-seen-v2';
   const DEMO_KEYS=new Set(['crime','art','deadpool','stranger']);
 
   function injectStyles(){
@@ -10,7 +9,7 @@
     const s=document.createElement('style');
     s.id='yuejiOnboardingStyles';
     s.textContent=`
-      .hero-mark.yueji-read-mark{color:#4f8f76!important;font-weight:900!important;font-family:Georgia,"Times New Roman",serif!important}
+      .hero-mark.yueji-read-mark{color:var(--accent)!important;font-weight:900!important;font-family:Georgia,"Times New Roman",serif!important}
       .yueji-guide{position:fixed;inset:0;z-index:140;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(0,0,0,.42);backdrop-filter:blur(6px)}
       .yueji-guide.show{display:flex}
       .yueji-guide-panel{width:min(460px,100%);background:var(--card);border:1px solid var(--line);border-radius:24px;padding:22px;box-shadow:0 28px 90px rgba(0,0,0,.28)}
@@ -23,14 +22,14 @@
     document.head.appendChild(s);
   }
 
-  function isBundledDemo(){
-    if(typeof state==='undefined'||!state||state.source!=='演示数据'||!Array.isArray(state.books))return false;
-    if(state.importedAt||state.weRead?.lastSync)return false;
-    return state.books.length===4&&state.books.every(b=>DEMO_KEYS.has(String(b.key||'')));
+  function isLegacyDemoOnly(){
+    if(typeof state==='undefined'||!state||!Array.isArray(state.books))return false;
+    if(state.books.length!==4)return false;
+    return state.books.every(b=>DEMO_KEYS.has(String(b.key||'')));
   }
 
-  function blankFreshDemo(){
-    if(!isBundledDemo()||localStorage.getItem(ALLOW_DEMO_KEY)==='1')return false;
+  function replaceWithBlank(){
+    if(!isLegacyDemoOnly())return false;
     const y=new Date().getFullYear();
     const accent=state.accent||'#5f8f7b';
     state={
@@ -43,10 +42,18 @@
     return true;
   }
 
+  function removeDemoControl(){
+    const btn=document.getElementById('loadDemo');
+    if(btn)btn.remove();
+  }
+
   function syncReadMark(){
     const el=document.getElementById('todayMark');if(!el)return;
     if(el.textContent.trim()==='✓')el.textContent='√';
-    el.classList.toggle('yueji-read-mark',el.textContent.trim()==='√');
+    const active=el.textContent.trim()==='√';
+    el.classList.toggle('yueji-read-mark',active);
+    if(active){el.style.color='var(--accent)';el.style.fontWeight='900'}
+    else{el.style.removeProperty('color');el.style.removeProperty('font-weight')}
   }
 
   function installReadMarkWatcher(){
@@ -60,37 +67,35 @@
     const d=document.createElement('div');
     d.id='yuejiGuide';d.className='yueji-guide';
     d.innerHTML=`<div class="yueji-guide-panel">
-      <h3>欢迎来到阅迹</h3>
-      <p>这里默认是空的。先把自己的阅读数据带进来，后面的日历、书库和统计才会开始生长。</p>
+      <h3>阅迹怎么用</h3>
+      <p>第一次使用时这里没有任何演示书，先导入你自己的阅读数据。</p>
       <div class="yueji-guide-steps">
-        <div class="yueji-guide-step"><i>1</i><div><b>先导入阅读数据</b><span>设置里可以连接微信读书 Skill Key，或导入静读天下 `.mrstd / .mrpro` 备份。</span></div></div>
-        <div class="yueji-guide-step"><i>2</i><div><b>日历看时间，书库看书</b><span>月历和年历记录你哪天读过；书库里可以看进度、整理书籍并手动更换封面。</span></div></div>
-        <div class="yueji-guide-step"><i>3</i><div><b>笔记和统计慢慢积累</b><span>摘录与感想会按书整理；统计里可以看总览、阅读演化、月报和年报。</span></div></div>
+        <div class="yueji-guide-step"><i>1</i><div><b>导入数据</b><span>设置里连接微信读书 Skill Key，或者导入静读天下 `.mrstd / .mrpro`。</span></div></div>
+        <div class="yueji-guide-step"><i>2</i><div><b>看日历和书库</b><span>日历记录哪天读过；书库整理书籍、进度和封面。</span></div></div>
+        <div class="yueji-guide-step"><i>3</i><div><b>留下笔记和统计</b><span>摘录、感想、阅读演化、月报和年报都会随着真实数据生成。</span></div></div>
       </div>
-      <div class="yueji-guide-actions"><button class="soft-btn" data-guide-close>知道了</button><button class="primary-btn" data-guide-settings>去导入数据</button></div>
+      <div class="yueji-guide-actions"><button class="soft-btn" data-guide-close>知道了</button><button class="primary-btn" data-guide-settings>去导入</button></div>
     </div>`;
     document.body.appendChild(d);
     const close=()=>{d.classList.remove('show');localStorage.setItem(GUIDE_KEY,'1')};
-    d.addEventListener('click',e=>{if(e.target===d||e.target.closest('[data-guide-close]'))close();if(e.target.closest('[data-guide-settings]')){close();document.getElementById('settingsBtn')?.click()}});
+    d.addEventListener('click',e=>{
+      if(e.target===d||e.target.closest('[data-guide-close]'))close();
+      if(e.target.closest('[data-guide-settings]')){close();document.getElementById('settingsBtn')?.click()}
+    });
 
     const settings=document.getElementById('settingsSheet');
     if(settings&&!document.getElementById('replayOnboarding')){
-      const sec=document.createElement('div');sec.className='settings-section';sec.innerHTML='<h4>使用帮助</h4><button class="soft-btn yueji-guide-replay" id="replayOnboarding">重新查看新手教程</button>';
+      const sec=document.createElement('div');sec.className='settings-section';
+      sec.innerHTML='<h4>使用帮助</h4><button class="soft-btn yueji-guide-replay" id="replayOnboarding">查看新手教程</button>';
       settings.appendChild(sec);
       sec.querySelector('button').onclick=()=>{try{closeSheets()}catch{}d.classList.add('show')};
     }
-    if(localStorage.getItem(GUIDE_KEY)!=='1')setTimeout(()=>d.classList.add('show'),180);
-  }
-
-  function protectExplicitDemo(){
-    const btn=document.getElementById('loadDemo');if(!btn)return;
-    btn.addEventListener('click',()=>localStorage.setItem(ALLOW_DEMO_KEY,'1'),true);
+    if(localStorage.getItem(GUIDE_KEY)!=='1')setTimeout(()=>d.classList.add('show'),120);
   }
 
   injectStyles();
-  const cleared=blankFreshDemo();
-  protectExplicitDemo();
+  replaceWithBlank();
+  removeDemoControl();
   installReadMarkWatcher();
   installGuide();
-  if(cleared)syncReadMark();
 })();
