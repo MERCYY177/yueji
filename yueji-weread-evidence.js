@@ -2,6 +2,9 @@
   'use strict';
 
   const n=v=>Number(v)||0;
+  const getState=()=>{
+    try{return typeof state!=='undefined'&&state&&Array.isArray(state.books)?state:null}catch{return null}
+  };
 
   function hasVerifiedWeReadReading(book){
     if(!book||!Array.isArray(book.sources)||!book.sources.includes('weread'))return false;
@@ -9,13 +12,12 @@
   }
 
   function cleanAmbiguousWeReadDates(){
-    if(!window.state||!Array.isArray(state.books))return false;
+    const st=getState();
+    if(!st)return false;
     let changed=false;
-    state.books.forEach(book=>{
+    st.books.forEach(book=>{
       if(!book||!Array.isArray(book.sources)||!book.sources.includes('weread'))return;
       if(book.weReadLastRead&&!hasVerifiedWeReadReading(book)){
-        // Keep the shelf timestamp for provenance/debugging, but do not let it
-        // masquerade as a verified book-level reading date in 阅读演化.
         if(!book.weReadShelfReadUpdate)book.weReadShelfReadUpdate=book.weReadLastRead;
         delete book.weReadLastRead;
         changed=true;
@@ -24,19 +26,31 @@
     return changed;
   }
 
-  const originalSave=window.save;
-  if(typeof originalSave==='function'){
-    window.save=function(...args){
+  let originalSave;
+  try{originalSave=typeof save==='function'?save:null}catch{originalSave=null}
+  if(originalSave){
+    const wrappedSave=function(...args){
       cleanAmbiguousWeReadDates();
       return originalSave.apply(this,args);
     };
+    try{save=wrappedSave}catch{window.save=wrappedSave}
   }
 
-  if(cleanAmbiguousWeReadDates()&&typeof originalSave==='function'){
-    originalSave();
-  }
+  const persistClean=()=>{
+    if(!cleanAmbiguousWeReadDates())return;
+    try{
+      if(originalSave)originalSave();
+      else{
+        const st=getState();
+        if(st)localStorage.setItem('yueji-archive-v1',JSON.stringify(st));
+      }
+    }catch(e){console.warn('WeRead evidence cleanup save skipped',e)}
+  };
 
-  document.addEventListener('DOMContentLoaded',()=>{
-    if(cleanAmbiguousWeReadDates()&&typeof originalSave==='function')originalSave();
-  },{once:true});
+  // Clean already-synced false reading dates immediately and again after the
+  // initial auto-sync window. This only removes the derived book-level date;
+  // the original shelf timestamp remains in weReadShelfReadUpdate.
+  persistClean();
+  setTimeout(persistClean,900);
+  setTimeout(persistClean,2500);
 })();
