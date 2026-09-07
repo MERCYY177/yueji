@@ -91,6 +91,7 @@
       <div class="wr-actions">
         <button class="soft-btn" id="wereadSyncBtn">立即同步</button>
         <button class="soft-btn" id="wereadDisconnectBtn">断开连接</button>
+        <label class="soft-btn" style="display:inline-flex;align-items:center;cursor:pointer">导入微信读书 JSON<input id="wereadJsonFile" type="file" accept=".json,application/json" hidden></label>
       </div>`;
     sheet.insertBefore(section, first);
     const key = localStorage.getItem(EXT_KEY) || '';
@@ -111,7 +112,17 @@
       setWeReadStatus('已断开微信读书。阅迹里已经同步过的数据不会删除。');
       updateSourcePill();
     });
+    document.getElementById('wereadJsonFile').addEventListener('change',async e=>{const file=e.target.files?.[0];if(!file)return;try{await importWeReadFile(file);e.target.value=''}catch(err){setWeReadStatus('导入失败：'+String(err?.message||err),true)}});
     updateWeReadStatus();
+  }
+
+  async function importWeReadFile(file){
+    const data=JSON.parse(await file.text()),shelf=data.shelf||data.data?.shelf||data,books=Array.isArray(shelf.books)?shelf.books:Array.isArray(data.books)?data.books:[],progressRows=Array.isArray(data.progress)?data.progress:Array.isArray(data.progresses)?data.progresses:[];
+    if(!books.length)throw new Error('文件里没有找到微信读书书架 books[]');
+    const progressMap=new Map(progressRows.map(x=>[String(x.bookId||x.book?.bookId||''),x]));
+    let imported=0;books.forEach(raw=>{const merged=mergeBookFromWeRead(raw,progressMap.get(String(raw.bookId)));if(merged)imported++});
+    const daily=data.daily||data.readDays||data.readdata?.daily;if(daily&&typeof daily==='object'&&!Array.isArray(daily))replaceWeReadDaily(daily);
+    state.weRead.lastSync=Date.now();state.source=state.books.some(b=>b.sources?.includes('moon'))?'多源阅读档案':'微信读书';save();renderAllSafe();updateSourcePill();updateWeReadStatus(`已从 JSON 导入 ${imported} 本书`);toast('微信读书 JSON 已导入');
   }
 
   function setWeReadStatus(text, isError = false) {
@@ -295,7 +306,7 @@
       renderAllSafe(); updateSourcePill(); updateWeReadStatus(`本次同步：${Object.keys(daily).length} 天日级统计 · ${bookCount} 个书架条目 · ${noteBooks} 本有笔记书籍`); toast('微信读书已同步');
     }catch(e){
       console.error(e); const msg=String(e?.message||e); const cors=/failed to fetch|networkerror|load failed/i.test(msg);
-      setWeReadStatus(cors?'连接失败：浏览器没有拿到微信读书网关响应。若 Skill Key 本身有效，这通常是浏览器跨域限制；阅迹没有修改或删除任何原数据。':`同步失败：${msg}`,true); if(manual)toast('微信读书同步失败');
+      setWeReadStatus(cors?'连接失败：GitHub Pages 浏览器版无法直接跨域访问微信读书网关。Skill Key 和原始数据没有被修改；请改用下方“导入微信读书 JSON”。':`同步失败：${msg}`,true); if(manual)toast('微信读书同步失败');
     }finally{window.__yuejiWeReadSyncing=false}
   }
 
