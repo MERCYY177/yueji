@@ -86,7 +86,7 @@
         <div class="section-head">
           <div>
             <div class="section-title">我的书架墙</div>
-            <div class="section-sub"><span id="libraryCount">0</span> 本 · 点击书脊编辑作者、分类、国家等信息</div>
+            <div class="section-sub"><span id="libraryCount">0</span> 本 · 点击书脊编辑作者、分类和阅读进度</div>
           </div>
         </div>
         <div class="bookshelf" id="bookshelf"></div>
@@ -147,15 +147,6 @@
         <div id="timelineHeat" class="timeline-heat"></div>
       </div>
 
-      <div class="card">
-        <div class="section-head">
-          <div>
-            <div class="section-title">国家 / 地区阅读地图</div>
-            <div class="section-sub">这部分需要你给作者补充国家信息；补过一次后，同作者可复用。</div>
-          </div>
-        </div>
-        <div id="countryBubbles" class="bubble-area"></div>
-      </div>
     </section>
 
     <!-- MONTHLY -->
@@ -286,12 +277,8 @@
   <input type="hidden" id="bookKey">
   <label class="field"><span>显示书名</span><input id="bookTitle"></label>
   <label class="field"><span>作者</span><input id="bookAuthor" placeholder="可补充"></label>
+  <label class="field"><span>分类</span><input id="bookCategory" placeholder="文学 / 漫画 / 艺术……"></label>
   <div class="two-inputs">
-    <label class="field"><span>分类</span><input id="bookCategory" placeholder="文学 / 漫画 / 艺术……"></label>
-    <label class="field"><span>国家 / 地区</span><input id="bookCountry" placeholder="俄罗斯 / 日本……"></label>
-  </div>
-  <div class="two-inputs">
-    <label class="field"><span>作者出生年</span><input id="bookBirth" type="number" placeholder="1821"></label>
     <label class="field"><span>当前进度 %</span><input id="bookProgress" type="number" min="0" max="100" step=".1"></label>
   </div>
   <div class="book-data-note" id="bookDataNote"></div>
