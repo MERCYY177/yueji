@@ -85,16 +85,12 @@
       <div class="card shelf-card">
         <div class="section-head">
           <div>
-            <div class="section-title">我的书架墙</div>
-            <div class="section-sub"><span id="libraryCount">0</span> 本 · 点击书脊编辑作者、分类和阅读进度</div>
+            <div class="section-title">我的书架</div>
+            <div class="section-sub"><span id="libraryCount">0</span> 本 · 点击封面查看和编辑书籍资料</div>
           </div>
         </div>
-        <div class="bookshelf" id="bookshelf"></div>
-      </div>
-
-      <div class="card">
-        <div class="section-head"><div class="section-title">书目列表</div></div>
-        <div id="bookTable" class="book-table"></div>
+        <div class="cover-shelf" id="bookshelf"></div>
+        <div id="bookTable" hidden></div>
       </div>
     </section>
 
@@ -104,12 +100,17 @@
         <div class="section-head">
           <div>
             <div class="section-title">我的阅读笔记</div>
-            <div class="section-sub">每日感悟、摘录与书籍关联在这里统一搜索。</div>
+            <div class="section-sub">先按书整理，再区分摘录和你写下的感想。</div>
           </div>
         </div>
         <div class="note-filter-row">
           <input id="noteSearch" class="search" placeholder="搜索感悟 / 摘录">
           <select id="noteBookFilter"><option value="">全部书籍</option></select>
+        </div>
+        <div class="seg note-kind-seg" id="noteKindSeg">
+          <button class="active" data-kind="all">全部</button>
+          <button data-kind="quotes">摘录</button>
+          <button data-kind="thoughts">感想</button>
         </div>
       </div>
       <div id="notesList" class="notes-list"></div>
@@ -181,6 +182,20 @@
       <div class="card">
         <div class="section-head"><div class="section-title">月度小结</div></div>
         <p id="monthSummary" class="month-summary"></p>
+      </div>
+
+      <div class="year-wall card">
+        <div class="section-head">
+          <div>
+            <div class="section-title">My Year in Books</div>
+            <div class="section-sub">按读完月份排列，只收录进度达到 100% 的书。</div>
+          </div>
+          <div class="year-wall-actions">
+            <input id="yearWallYear" type="number" min="2000" max="2100">
+            <button class="soft-btn" id="saveYearWall">保存图片</button>
+          </div>
+        </div>
+        <div id="yearWallPreview" class="year-wall-preview"></div>
       </div>
     </section>
   </main>
@@ -283,6 +298,7 @@
   <label class="field"><span>分类</span><input id="bookCategory" placeholder="文学 / 漫画 / 艺术……"></label>
   <div class="two-inputs">
     <label class="field"><span>当前进度 %</span><input id="bookProgress" type="number" min="0" max="100" step=".1"></label>
+    <label class="field"><span>读完日期</span><input id="bookFinishedDate" type="date"></label>
   </div>
   <div class="book-data-note" id="bookDataNote"></div>
   <button class="primary-btn" id="saveBook">保存书籍资料</button>
