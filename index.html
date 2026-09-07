@@ -207,11 +207,18 @@
   <div class="settings-section">
     <h4>导入静读天下</h4>
     <label class="import-box">
-      <input type="file" id="mrproFile" accept=".mrpro,.zip" hidden>
-      <b>选择 `.mrpro` 备份</b>
-      <span>文件只在当前浏览器本地解析，不上传。</span>
+      <input type="file" id="mrproFile" accept=".mrstd,.mrpro,.zip" hidden>
+      <b>选择 `.mrstd` 或 `.mrpro` 备份</b>
+      <span>不需要包含电子书正文；文件只在当前浏览器本地解析。</span>
     </label>
     <div id="importStatus" class="import-status"></div>
+    <div id="importPreview" class="import-preview" hidden>
+      <div id="importPreviewText"></div>
+      <div class="settings-actions">
+        <button class="primary-btn import-confirm" id="confirmMoonImport">确认合并导入</button>
+        <button class="soft-btn" id="cancelMoonImport">取消</button>
+      </div>
+    </div>
   </div>
 
   <div class="settings-section">
@@ -244,10 +251,6 @@
     </div>
   </div>
 
-  <div class="settings-section webdav-note">
-    <h4>WebDAV 自动同步</h4>
-    <p>这版先不把 WebDAV 密码存在纯前端网页里。等界面和统计逻辑定稿后，再给它加一个很小的后端，让静读天下书架/进度自动同步，同时把凭证留在服务器端。</p>
-  </div>
 </div>
 
 <!-- JOURNAL -->
