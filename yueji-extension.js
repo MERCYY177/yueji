@@ -2,7 +2,7 @@
   'use strict';
 
   const EXT_KEY = 'yueji-weread-key';
-  const GATEWAY = 'https://i.weread.qq.com/api/agent/gateway';
+  const GATEWAY = '/.netlify/functions/weread-gateway';
   const SKILL_VERSION = '1.0.5';
   const AUTO_SYNC_MS = 6 * 60 * 60 * 1000;
   const WR_SESSION_PREFIX = 'weread-day:';
@@ -306,7 +306,7 @@
       renderAllSafe(); updateSourcePill(); updateWeReadStatus(`本次同步：${Object.keys(daily).length} 天日级统计 · ${bookCount} 个书架条目 · ${noteBooks} 本有笔记书籍`); toast('微信读书已同步');
     }catch(e){
       console.error(e); const msg=String(e?.message||e); const cors=/failed to fetch|networkerror|load failed/i.test(msg);
-      setWeReadStatus(cors?'连接失败：GitHub Pages 浏览器版无法直接跨域访问微信读书网关。Skill Key 和原始数据没有被修改；请改用下方“导入微信读书 JSON”。':`同步失败：${msg}`,true); if(manual)toast('微信读书同步失败');
+      setWeReadStatus(cors?'连接失败：微信读书中转服务没有响应。Skill Key 和原始数据没有被修改；请确认当前网页部署在 Netlify，并稍后重试。':`同步失败：${msg}`,true); if(manual)toast('微信读书同步失败');
     }finally{window.__yuejiWeReadSyncing=false}
   }
 
