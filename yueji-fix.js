@@ -1,8 +1,9 @@
 (()=>{
   'use strict';
+  document.title='阅迹';
   const load=(src,done)=>{
     const s=document.createElement('script');
-    s.src=src+'?v=20260907-cover-calendar';
+    s.src=src+'?v=20260907-cover-calendar-title';
     if(done)s.onload=done;
     document.head.appendChild(s);
   };
