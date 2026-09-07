@@ -82,7 +82,7 @@
     section.id = 'wereadSettings';
     section.innerHTML = `
       <h4>微信读书同步</h4>
-      <div class="section-sub">输入微信读书 Skill Key。连接后，阅迹会在打开网页时自动补齐阅读统计、书籍进度和个人书摘；Key 只保存在当前浏览器，不进入阅迹 JSON 备份。</div>
+      <div class="section-sub">输入微信读书 Skill Key。连接后，阅迹会在打开网页时自动补齐阅读统计、书籍进度和个人书摘；已经进入微信读书云端书架的导入书也会读取，只留在手机文件夹里的书不会读取。Key 只保存在当前浏览器，不进入阅迹 JSON 备份。</div>
       <div class="wr-connect-row">
         <input id="wereadKeyInput" class="wr-key" type="password" autocomplete="off" placeholder="Skill Key">
         <button class="primary-btn" id="wereadConnectBtn">连接并同步</button>
@@ -149,6 +149,7 @@
   function mergeBookFromWeRead(raw, progress) {
     if (!raw) return null;
     const bookId = String(raw.bookId || progress?.bookId || '');
+    if(bookId&&(state.hiddenWeReadBookIds||[]).map(String).includes(bookId))return null;
     const title = raw.title || raw.name || '';
     const author = raw.author || raw.authorName || '';
     let existing = state.books.find(b => bookId && String(b.weReadBookId || '') === bookId);
