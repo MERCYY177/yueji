@@ -14,7 +14,7 @@ function injectLayoutStyles(){
     .home-recent-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.home-recent-book{display:grid;grid-template-columns:52px 1fr;gap:11px;align-items:center;border:0;background:transparent;padding:0;text-align:left;min-width:0}.home-recent-cover{width:52px;aspect-ratio:2/3;border-radius:5px;overflow:hidden;background:var(--soft);border:1px solid var(--line);position:relative}.home-recent-cover img{width:100%;height:100%;object-fit:cover}.home-recent-cover i{position:absolute;inset:6px;display:grid;place-items:center;text-align:center;font-style:normal;font-family:"Songti SC","STSong",serif;font-size:.55rem;line-height:1.35;color:var(--muted)}.home-recent-book b,.home-recent-book small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.home-recent-book small{margin-top:4px;color:var(--muted);font-size:.72rem}.home-recent-progress{height:4px;background:var(--line);border-radius:99px;margin-top:8px;overflow:hidden}.home-recent-progress i{display:block;height:100%;background:var(--accent);border-radius:inherit}
     .home-foot-wrap{display:flex;align-items:flex-end;gap:14px}.home-foot-meta{min-width:100px}.home-foot-meta b{font-size:1.4rem;display:block}.home-foot-meta span{font-size:.72rem;color:var(--muted)}.home-foot-grid{flex:1;display:grid;grid-template-rows:repeat(7,8px);grid-auto-flow:column;grid-auto-columns:1fr;gap:3px;min-width:0}.home-foot-cell{border-radius:2px;background:var(--soft)}.home-foot-cell.read{background:rgba(var(--accent-rgb),var(--level))}
     .library-head{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;margin:5px 3px 18px}.library-head h2{margin:3px 0 0;font-family:"Songti SC","STSong",serif;font-size:2rem}.library-tools{display:grid;gap:12px}.library-top-row{display:flex;gap:10px;align-items:center}.library-top-row .search{flex:1}.library-sub-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}.library-count{font-size:.78rem;color:var(--muted)}
-    .layout-cover-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:22px 15px}.layout-cover-card{border:0;background:transparent;padding:0;text-align:left;min-width:0}.layout-cover-art{position:relative;aspect-ratio:2/3;border-radius:7px;overflow:hidden;background:var(--soft);border:1px solid var(--line)}.layout-cover-art img{width:100%;height:100%;object-fit:cover}.layout-cover-art i{position:absolute;inset:12px;display:grid;place-items:center;text-align:center;font-family:"Songti SC","STSong",serif;font-style:normal;line-height:1.5}.layout-cover-info{padding:9px 2px 0}.layout-cover-info b,.layout-cover-info small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.layout-cover-info b{font-size:.86rem}.layout-cover-info small{font-size:.71rem;color:var(--muted);margin-top:4px}.layout-cover-progress{height:4px;background:var(--line);border-radius:99px;margin-top:7px;overflow:hidden}.layout-cover-progress i{display:block;height:100%;background:var(--accent)}
+    .layout-cover-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:22px 15px}.layout-cover-card{display:block;overflow:hidden;border:0;background:transparent;padding:0;text-align:left;min-width:0;width:100%}.layout-cover-art{display:block;position:relative;width:100%;min-width:0;aspect-ratio:2/3;border-radius:7px;overflow:hidden;background:var(--soft);border:1px solid var(--line)}.layout-cover-art img{display:block;position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.layout-cover-art i{position:absolute;inset:12px;display:grid;place-items:center;text-align:center;font-family:"Songti SC","STSong",serif;font-style:normal;line-height:1.5;overflow:hidden}.layout-cover-art.has-image i{display:none}.layout-cover-info{display:block;min-width:0;padding:9px 2px 0}.layout-cover-info b,.layout-cover-info small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.layout-cover-info b{font-size:.86rem}.layout-cover-info small{font-size:.71rem;color:var(--muted);margin-top:4px}.layout-cover-progress{height:4px;background:var(--line);border-radius:99px;margin-top:7px;overflow:hidden}.layout-cover-progress i{display:block;height:100%;background:var(--accent)}
     .library-wall{display:grid;gap:0;border:1px solid var(--line);border-radius:18px;overflow:hidden;background:var(--card)}.wall-row{display:flex;align-items:flex-end;gap:4px;min-height:178px;padding:22px 16px 0;border-bottom:12px solid var(--line);overflow:hidden}.wall-row:last-child{border-bottom:0}.wall-spine{border:1px solid color-mix(in srgb,var(--ink) 15%,transparent);border-bottom:0;border-radius:4px 4px 0 0;min-width:34px;width:var(--w);height:var(--h);padding:8px 5px;background:color-mix(in srgb,var(--soft) 88%,var(--accent));writing-mode:vertical-rl;text-orientation:mixed;font-family:"Songti SC","STSong",serif;font-size:.72rem;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
     .stats-tabs{display:flex;gap:4px;padding:4px;margin-bottom:16px;background:var(--soft);border:1px solid var(--line);border-radius:16px;overflow:auto}.stats-tabs button{flex:1;min-width:72px;border:0;background:transparent;border-radius:12px;padding:10px 12px;color:var(--muted);font-weight:700}.stats-tabs button.active{background:var(--card);color:var(--ink);box-shadow:0 2px 8px rgba(0,0,0,.06)}.stats-panel[hidden]{display:none!important}.stats-hidden-legacy{display:none!important}.stats-overview-stack{display:grid;gap:16px}.stats-overview-stack>.card{margin:0}.stats-progress-card{width:100%}
     .timeline-matrix-wrap{overflow-x:auto}.timeline-matrix{display:grid;gap:5px;min-width:620px}.timeline-head-row,.timeline-data-row{display:grid;grid-template-columns:54px repeat(12,minmax(34px,1fr));gap:5px;align-items:center}.timeline-head-row span,.timeline-year{font-size:.7rem;color:var(--muted);text-align:center}.timeline-year{text-align:left}.timeline-cell{height:26px;border-radius:5px;background:var(--soft)}
@@ -130,7 +130,7 @@ function renderLibraryLayout(){
     root.innerHTML=rows.map((row,ri)=>`<div class="wall-row">${row.map((b,i)=>`<button class="wall-spine" data-layout-book="${esc(b.key)}" style="--w:${34+((i+ri)%5)*4}px;--h:${112+((i*13+ri*9)%58)}px" title="${esc(b.title||'未命名')}">${esc(b.title||'未命名')}</button>`).join('')}</div>`).join('');
   }else{
     root.className='layout-cover-grid';
-    root.innerHTML=arr.map(b=>{const url=b.cover||b.weReadCover||'';return `<button class="layout-cover-card" data-layout-book="${esc(b.key)}"><span class="layout-cover-art">${url?`<img src="${esc(url)}" alt="" onerror="this.style.display='none'">`:''}<i>${esc(b.title||'未命名')}</i></span><span class="layout-cover-info"><b>${esc(b.title||'未命名')}</b><small>${esc(b.author||'')} · ${Math.round(+b.progress||0)}%</small><span class="layout-cover-progress"><i style="width:${Math.max(0,Math.min(100,+b.progress||0))}%"></i></span></span></button>`}).join('');
+    root.innerHTML=arr.map(b=>{const url=b.cover||b.weReadCover||'';return `<button class="layout-cover-card" data-layout-book="${esc(b.key)}"><span class="layout-cover-art${url?' has-image':''}">${url?`<img src="${esc(url)}" alt="" onerror="this.style.display='none';this.parentElement.classList.remove('has-image')">`:''}<i>${esc(b.title||'未命名')}</i></span><span class="layout-cover-info"><b>${esc(b.title||'未命名')}</b><small>${esc(b.author||'')} · ${Math.round(+b.progress||0)}%</small><span class="layout-cover-progress"><i style="width:${Math.max(0,Math.min(100,+b.progress||0))}%"></i></span></span></button>`}).join('');
   }
   root.querySelectorAll('[data-layout-book]').forEach(x=>x.onclick=()=>openBook(x.dataset.layoutBook));
 }
@@ -168,6 +168,35 @@ function renderTimelineMatrix(){
   const max=Math.max(1,...Object.values(sums));
   el.className='timeline-matrix-wrap';
   el.innerHTML=`<div class="timeline-matrix"><div class="timeline-head-row"><span></span>${Array.from({length:12},(_,i)=>`<span>${i+1}月</span>`).join('')}</div>${years.map(y=>`<div class="timeline-data-row"><b class="timeline-year">${y}</b>${Array.from({length:12},(_,i)=>{const v=sums[`${y}-${pad(i+1)}`]||0,a=v?(.12+.78*v/max):0;return `<i class="timeline-cell" style="${v?`background:rgba(var(--accent-rgb),${a})`:''}" title="${y}年${i+1}月 · ${Math.round(v)} 分钟"></i>`}).join('')}</div>`).join('')}</div>`;
+}
+
+
+function installCalendarAnnual(){
+  const wrap=document.getElementById('yearCalendarWrap');
+  if(!wrap||document.getElementById('calendarYearWallCard'))return;
+  const card=document.createElement('div');
+  card.id='calendarYearWallCard';
+  card.className='year-wall card';
+  card.hidden=true;
+  card.innerHTML=`<div class="section-head"><div><div class="section-title">My Year in Books</div><div class="section-sub">按读完月份排列，只收录进度达到 100% 的书；它和上面的年度打卡会同时保留。</div></div><div class="year-wall-actions"><input id="calendarYearWallYear" type="number" min="2000" max="2100"><button class="soft-btn" id="saveCalendarYearWall">保存图片</button></div></div><div id="calendarYearWallPreview" class="year-wall-preview"></div>`;
+  wrap.insertAdjacentElement('afterend',card);
+  document.getElementById('calendarYearWallYear').onchange=()=>renderCalendarAnnual();
+  document.getElementById('saveCalendarYearWall').onclick=()=>{
+    document.getElementById('yearWallYear').value=document.getElementById('calendarYearWallYear').value;
+    document.getElementById('saveYearWall').click();
+  };
+}
+async function renderCalendarAnnual(){
+  const card=document.getElementById('calendarYearWallCard');
+  if(!card)return;
+  const year=calendarDate.getFullYear();
+  const input=document.getElementById('calendarYearWallYear');
+  input.value=year;
+  document.getElementById('yearWallYear').value=year;
+  await renderYearWall();
+  const preview=document.getElementById('calendarYearWallPreview');
+  preview.innerHTML=document.getElementById('yearWallPreview').innerHTML;
+  await hydrateCovers(preview);
 }
 
 function installStatsStructure(){
@@ -215,6 +244,12 @@ function rebuildBottomNav(){
 let coreRenderAnalytics;
 function patchCore(){
   const oldLibrary=renderLibrary;renderLibrary=function(){return renderLibraryLayout()};
+  const oldCalendar=renderCalendarPage;renderCalendarPage=function(){
+    oldCalendar();
+    const annual=document.getElementById('calendarYearWallCard');
+    if(annual)annual.hidden=calendarView!=='year';
+    if(calendarView==='year')renderCalendarAnnual();
+  };
   coreRenderAnalytics=renderAnalytics;renderAnalytics=function(){coreRenderAnalytics();renderOverviewStats()};
   const oldSwitch=switchPage;switchPage=function(p){oldSwitch(p);if(p==='today')renderHomeDashboard();if(p==='library')renderLibrary();if(p==='analytics'){moveEvolutionCard();showStatsTab(statsTab)}};
   const oldAll=renderAll;renderAll=function(){oldAll();renderHomeDashboard();if(page==='library')renderLibrary();if(page==='analytics'){renderOverviewStats();moveEvolutionCard()}};
@@ -224,6 +259,7 @@ function install(){
   injectLayoutStyles();
   installHome();
   installLibrary();
+  installCalendarAnnual();
   installStatsStructure();
   rebuildBottomNav();
   patchCore();
