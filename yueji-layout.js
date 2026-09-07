@@ -122,8 +122,8 @@ function installLibrary(){
 function renderLibraryLayout(){
   const root=document.getElementById('bookshelf');if(!root)return;
   const q=(document.getElementById('bookSearch')?.value||'').trim().toLowerCase();
-  const arr=state.books.filter(b=>(libraryFilterLocal==='all'||statusOf(b)===libraryFilterLocal)&&`${b.title||''} ${b.author||''} ${b.file||''}`.toLowerCase().includes(q));
-  const count=document.getElementById('libraryCount');if(count)count.textContent=`${arr.length} / ${state.books.length} 本`;
+  const visibleBooks=state.books.filter(b=>!b.hidden);const arr=visibleBooks.filter(b=>(libraryFilterLocal==='all'||statusOf(b)===libraryFilterLocal)&&`${b.title||''} ${b.author||''} ${b.file||''}`.toLowerCase().includes(q));
+  const count=document.getElementById('libraryCount');if(count)count.textContent=`${arr.length} / ${visibleBooks.length} 本`;
   if(!arr.length){root.className='';root.innerHTML='<div class="empty-text">没有符合条件的书。</div>';return}
   if(libraryView==='wall'){
     root.className='library-wall';
