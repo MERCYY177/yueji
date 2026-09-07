@@ -36,61 +36,56 @@
             <div><b id="todayBooks">0</b><span>本书</span></div>
             <div><b id="todayWords">0</b><span>字</span></div>
           </div>
+          <div id="todayCompact" class="today-compact"></div>
+          <button class="soft-btn today-write" id="editTodayBtn">写感想</button>
         </div>
         <div class="hero-mark" id="todayMark">📖</div>
       </div>
+    </section>
 
-      <div class="card">
+    <!-- CALENDAR -->
+    <section class="page" data-page="calendar">
+      <div class="calendar-head card">
+        <div>
+          <div class="kicker">READING CALENDAR</div>
+          <h2 id="calendarTitle">阅读日历</h2>
+        </div>
+        <div class="seg" id="calendarMode">
+          <button class="active" data-calendar-mode="month">月历</button>
+          <button data-calendar-mode="year">年历</button>
+        </div>
+      </div>
+
+      <div class="calendar-nav">
+        <button class="round-btn" id="calendarPrev" aria-label="上一个">‹</button>
+        <b id="calendarPeriod"></b>
+        <button class="round-btn" id="calendarNext" aria-label="下一个">›</button>
+      </div>
+
+      <div class="card calendar-card" id="monthCalendarWrap">
+        <div class="calendar-weekdays"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
+        <div id="monthCalendar" class="cover-calendar"></div>
+      </div>
+
+      <div class="card" id="yearCalendarWrap" hidden>
         <div class="section-head">
           <div>
             <div class="section-title">阅读一年</div>
-            <div class="section-sub">导入静读天下后，有阅读记录的日期自动点亮；也可以手动补记。</div>
+            <div class="section-sub">有阅读记录的日期会自动点亮。</div>
           </div>
           <div class="compact-stat"><b id="challengeRead">0</b><span>天</span></div>
         </div>
         <div class="months-grid" id="challengeGrid"></div>
       </div>
 
-      <div class="card">
-        <div class="section-head">
-          <div>
-            <div class="section-title">今日手记</div>
-            <div class="section-sub">静读天下负责“读了多少”，这里留下“我想到了什么”。</div>
-          </div>
-          <button class="soft-btn" id="editTodayBtn">编辑</button>
-        </div>
-        <div id="todayJournal" class="journal-preview empty-text">今天还没有写感悟。</div>
-      </div>
-
-      <div class="card">
-        <div class="section-head">
-          <div class="section-title">今天读过</div>
-        </div>
-        <div id="todayBookList" class="mini-book-list"></div>
-      </div>
-    </section>
-
-    <!-- LIBRARY -->
-    <section class="page" data-page="library">
-      <div class="toolbar card">
-        <input id="bookSearch" class="search" placeholder="搜索书名或文件名">
-        <div class="seg" id="librarySeg">
-          <button class="active" data-filter="all">全部</button>
-          <button data-filter="reading">在读</button>
-          <button data-filter="done">已读</button>
-          <button data-filter="unread">未读</button>
-        </div>
-      </div>
-
-      <div class="card shelf-card">
-        <div class="section-head">
-          <div>
-            <div class="section-title">我的书架</div>
-            <div class="section-sub"><span id="libraryCount">0</span> 本 · 点击封面查看和编辑书籍资料</div>
-          </div>
-        </div>
-        <div class="cover-shelf" id="bookshelf"></div>
-        <div id="bookTable" hidden></div>
+      <div hidden>
+        <input id="bookSearch">
+        <div id="librarySeg"></div>
+        <span id="libraryCount"></span>
+        <div id="bookshelf"></div>
+        <div id="bookTable"></div>
+        <div id="todayJournal"></div>
+        <div id="todayBookList"></div>
       </div>
     </section>
 
@@ -202,7 +197,7 @@
 
   <nav class="bottom-nav">
     <button class="nav-btn active" data-go="today"><span>⌂</span>今天</button>
-    <button class="nav-btn" data-go="library"><span>▥</span>书库</button>
+    <button class="nav-btn" data-go="calendar"><span>▦</span>日历</button>
     <button class="nav-btn" data-go="notes"><span>✎</span>笔记</button>
     <button class="nav-btn" data-go="analytics"><span>◫</span>统计</button>
     <button class="nav-btn" data-go="monthly"><span>☷</span>月报</button>
