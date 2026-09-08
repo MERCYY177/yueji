@@ -5,6 +5,7 @@
   const GATEWAY = '/.netlify/functions/weread-gateway';
   const SKILL_VERSION = '1.0.5';
   const AUTO_SYNC_MS = 6 * 60 * 60 * 1000;
+  const REQUEST_TIMEOUT_MS = 18000;
   const WR_SESSION_PREFIX = 'weread-day:';
   const WR_HIGHLIGHT_MARKER = '__YUEJI_WEREAD__';
 
@@ -100,7 +101,7 @@
       const val = document.getElementById('wereadKeyInput').value.trim();
       if (!val) return setWeReadStatus('请先填入 Skill Key。', true);
       localStorage.setItem(EXT_KEY, val);
-      await syncWeRead({ full: !state.weRead.lastSync, manual: true });
+      await syncWeRead({ full: false, manual: true });
     });
     document.getElementById('wereadSyncBtn').addEventListener('click', async () => {
       if (!localStorage.getItem(EXT_KEY)) return setWeReadStatus('还没有保存 Skill Key。', true);
@@ -146,11 +147,22 @@
   async function wereadCall(apiName, params = {}) {
     const key = localStorage.getItem(EXT_KEY);
     if (!key) throw new Error('没有 Skill Key');
-    const res = await fetch(GATEWAY, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ api_name: apiName, skill_version: SKILL_VERSION, ...params })
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    let res;
+    try {
+      res = await fetch(GATEWAY, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_name: apiName, skill_version: SKILL_VERSION, ...params }),
+        signal: controller.signal
+      });
+    } catch (error) {
+      if (error?.name === 'AbortError') throw new Error('微信读书响应超时，请稍后重试；已经同步的数据会保留');
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
     let data;
     try { data = await res.json(); } catch { throw new Error(`微信读书返回了无法解析的响应（${res.status}）`); }
     if (!res.ok || data?.errcode && data.errcode !== 0) throw new Error(data?.errmsg || data?.message || `微信读书接口错误（${res.status}）`);
@@ -247,13 +259,21 @@
   }
 
   async function syncShelfAndProgress() {
-    setWeReadStatus('正在同步微信读书书架和阅读进度……');
+    setWeReadStatus('正在读取微信读书书架……');
     const shelf = await wereadCall('/shelf/sync');
     const books = Array.isArray(shelf.books) ? shelf.books : [];
+    books.forEach(b=>mergeBookFromWeRead(b));
+    save(); renderAllSafe(); updateSourcePill();
     const started = books.filter(b => b.readUpdateTime || b.finishReading===1);
-    const progressResults = await mapConcurrent(started,3,async b => { const p=await wereadCall('/book/getprogress',{bookId:b.bookId}); await sleep(30); return {raw:b,progress:p}; });
+    let completed=0;
+    const progressResults = await mapConcurrent(started,3,async b => {
+      const p=await wereadCall('/book/getprogress',{bookId:b.bookId});
+      completed++; setWeReadStatus(`书架已保存，正在补阅读进度 ${completed}/${started.length}……`);
+      await sleep(30); return {raw:b,progress:p};
+    });
     const progressById = new Map(progressResults.filter(x=>x&&!x.__error).map(x=>[String(x.raw.bookId),x.progress]));
     books.forEach(b=>mergeBookFromWeRead(b,progressById.get(String(b.bookId))));
+    save(); renderAllSafe();
     return books.length;
   }
 
@@ -271,7 +291,9 @@
     setWeReadStatus('正在同步微信读书书摘和想法……');
     const notebooks = await fetchAllNotebooks();
     const existingNonWr = (state.highlights||[]).filter(h=>h.source!=='weread' && h.bookmark!==WR_HIGHLIGHT_MARKER);
+    const existingWr = (state.highlights||[]).filter(h=>h.source==='weread' || h.bookmark===WR_HIGHLIGHT_MARKER);
     const wrHighlights=[];
+    let completed=0;
     await mapConcurrent(notebooks,3,async nb=>{
       const rawBook=nb.book||{bookId:nb.bookId}; const merged=mergeBookFromWeRead(rawBook,{book:{progress:n(nb.readingProgress)}});
       if(!merged||!rawBook.bookId) return;
@@ -287,9 +309,10 @@
           if(!data.hasMore)break; synckey=data.synckey||0; if(!synckey)break;
         }
       }catch(e){console.warn('WeRead reviews skipped',e)}
+      completed++; setWeReadStatus(`正在补书摘和想法 ${completed}/${notebooks.length}……`);
       await sleep(35);
     });
-    const dedup=new Map(); wrHighlights.forEach(h=>dedup.set(h.id,h)); state.highlights=[...existingNonWr,...dedup.values()];
+    const dedup=new Map(existingWr.map(h=>[h.id,h])); wrHighlights.forEach(h=>dedup.set(h.id,h)); state.highlights=[...existingNonWr,...dedup.values()];
     return notebooks.length;
   }
 
@@ -299,14 +322,16 @@
       setWeReadStatus('正在连接微信读书……');
       await wereadCall('/_list');
       const overall=await wereadCall('/readdata/detail',{mode:'overall'});
-      const daily=await fetchHistoryDaily(overall,full); replaceWeReadDaily(daily);
-      const bookCount=await syncShelfAndProgress(); const noteBooks=await syncNotes();
+      const bookCount=await syncShelfAndProgress();
+      setWeReadStatus(`已保存 ${bookCount} 个书架条目，正在同步阅读日历……`);
+      const daily=await fetchHistoryDaily(overall,full); replaceWeReadDaily(daily); save(); renderAllSafe();
+      const noteBooks=await syncNotes();
       state.weRead.lastSync=Date.now(); state.weRead.skillVersion=SKILL_VERSION; state.weRead.registTime=overall?.registTime||state.weRead.registTime||0;
       state.source=state.books.some(b=>b.sources?.includes('moon'))?'多源阅读档案':'微信读书'; save();
       renderAllSafe(); updateSourcePill(); updateWeReadStatus(`本次同步：${Object.keys(daily).length} 天日级统计 · ${bookCount} 个书架条目 · ${noteBooks} 本有笔记书籍`); toast('微信读书已同步');
     }catch(e){
       console.error(e); const msg=String(e?.message||e); const cors=/failed to fetch|networkerror|load failed/i.test(msg);
-      setWeReadStatus(cors?'连接失败：微信读书中转服务没有响应。Skill Key 和原始数据没有被修改；请确认当前网页部署在 Netlify，并稍后重试。':`同步失败：${msg}`,true); if(manual)toast('微信读书同步失败');
+      setWeReadStatus(cors?'连接失败：微信读书中转服务没有响应。Skill Key 和原始数据没有被修改；请确认当前网页部署在 Netlify，并稍后重试。':`同步未完成：${msg}。此前已经完成的书架或统计会保留，可以稍后继续。`,true); if(manual)toast('微信读书同步未完成');
     }finally{window.__yuejiWeReadSyncing=false}
   }
 
@@ -379,7 +404,7 @@
     const notes=document.getElementById('notesList'); if(notes)new MutationObserver(()=>patchNoteSources()).observe(notes,{childList:true,subtree:true});
   }
 
-  async function autoSyncIfNeeded(){const key=localStorage.getItem(EXT_KEY);if(!key)return;if(Date.now()-n(state.weRead.lastSync)<AUTO_SYNC_MS)return;await syncWeRead({full:!state.weRead.lastSync,manual:false})}
+  async function autoSyncIfNeeded(){const key=localStorage.getItem(EXT_KEY);if(!key)return;if(Date.now()-n(state.weRead.lastSync)<AUTO_SYNC_MS)return;await syncWeRead({full:false,manual:false})}
 
   function init(){ensureStateShape();injectStyles();injectSettings();injectEvolution();installHooks();updateSourcePill();renderEvolution();patchNoteSources();setTimeout(autoSyncIfNeeded,700)}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
