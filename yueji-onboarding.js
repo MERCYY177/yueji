@@ -74,7 +74,7 @@
       <h3>阅迹怎么用</h3>
       <p>第一次使用只需要做一件事：把自己的阅读数据导进来。没有导入任何东西时，阅迹不会放任何演示书。</p>
       <div class="yueji-guide-steps">
-        <div class="yueji-guide-step"><i>1</i><div><b>导入数据</b><span>设置里连接微信读书 Skill Key，或导入静读天下 `.mrstd / .mrpro` 备份。</span></div></div>
+        <div class="yueji-guide-step"><i>1</i><div><b>导入数据</b><span>设置里连接微信读书 Skill Key，或导入静读天下 <code>.mrstd / .mrpro</code> 备份。</span></div></div>
         <div class="yueji-guide-step"><i>2</i><div><b>日历与书库</b><span>日历看哪天读过；书库看读过什么、当前进度，也可以手动更换封面。</span></div></div>
         <div class="yueji-guide-step"><i>3</i><div><b>笔记与统计</b><span>书摘和感想会按书整理；统计里查看总览、阅读演化、月报和年报。</span></div></div>
       </div>
