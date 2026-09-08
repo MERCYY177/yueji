@@ -49,16 +49,9 @@
 
   function syncReadMark(){
     const el=document.getElementById('todayMark');if(!el)return;
-    const hasRead=el.textContent.trim()==='✓'||el.textContent.trim()==='√';
-    if(hasRead){
-      el.textContent='√';
-      el.classList.add('yueji-read-mark');
-      el.style.setProperty('color','var(--accent)','important');
-      el.style.setProperty('font-weight','900','important');
-    }else{
-      el.classList.remove('yueji-read-mark');
-      el.style.removeProperty('color');el.style.removeProperty('font-weight');
-    }
+    el.textContent='📖';
+    el.classList.remove('yueji-read-mark');
+    el.style.removeProperty('color');el.style.removeProperty('font-weight');
   }
 
   function watchReadMark(){
