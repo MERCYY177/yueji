@@ -17,7 +17,7 @@
       .yueji-guide-steps{display:grid;gap:10px}.yueji-guide-step{display:grid;grid-template-columns:30px 1fr;gap:11px;padding:12px;border:1px solid var(--line);border-radius:16px;background:var(--soft)}
       .yueji-guide-step>i{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:rgba(var(--accent-rgb),.15);color:var(--accent);font-style:normal;font-weight:900}.yueji-guide-step b{display:block;font-size:.9rem;margin-bottom:3px}.yueji-guide-step span{display:block;color:var(--muted);font-size:.76rem;line-height:1.55}
       .yueji-guide-actions{display:flex;gap:9px;margin-top:18px}.yueji-guide-actions button{flex:1}.yueji-guide-replay{width:100%}
-      @media(max-width:520px){.yueji-guide{align-items:flex-end;padding:10px}.yueji-guide-panel{border-radius:24px 24px 16px 16px}}
+      @media(max-width:520px){.yueji-guide{align-items:center;padding:12px}.yueji-guide-panel{max-height:calc(100dvh - 24px);overflow-y:auto;border-radius:24px}}
     `;
     document.head.appendChild(s);
   }
