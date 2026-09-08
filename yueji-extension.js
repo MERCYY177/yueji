@@ -6,10 +6,21 @@
   const SKILL_VERSION = '1.0.5';
   const AUTO_SYNC_MS = 6 * 60 * 60 * 1000;
   const REQUEST_TIMEOUT_MS = 18000;
+  const SYNC_DEADLINE_MS = 60000;
+  const PROGRESS_BATCH_SIZE = 8;
+  const NOTES_BATCH_SIZE = 6;
+  const NOTEBOOK_PAGE_LIMIT = 20;
+  const REVIEW_PAGE_LIMIT = 20;
   const WR_SESSION_PREFIX = 'weread-day:';
   const WR_HIGHLIGHT_MARKER = '__YUEJI_WEREAD__';
+  let activeSync = null;
+  let notebooksCache = [];
 
   const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const yieldToBrowser = () => new Promise(resolve => {
+    if (globalThis.scheduler?.yield) globalThis.scheduler.yield().then(resolve, resolve);
+    else setTimeout(resolve, 0);
+  });
   const n = v => Number(v) || 0;
   const safeDate = ts => {
     const num = Number(ts);
@@ -22,9 +33,32 @@
   const normalizeAuthor = s => normalizeText(s).replace(/著|编|译|作者/g, '');
   const sourceName = s => s === 'weread' ? '微信读书' : s === 'moon' ? '静读天下' : s === 'manual' ? '手动' : s || '';
 
+  function isStorageLimitError(error) {
+    return error?.name === 'QuotaExceededError' || error?.code === 22 || /quota|storage.*(full|limit)|exceeded/i.test(String(error?.message||error));
+  }
+
+  async function saveCheckpoint({highlights=false,highlightRows=[]}={}) {
+    try { if(window.yuejiHighlightsReady)await window.yuejiHighlightsReady;if(window.yuejiHighlightsDbReady?.()){if(highlights)await window.yuejiPersistHighlights();else if(highlightRows.length)await window.yuejiPutHighlights(highlightRows)}save(); return true; }
+    catch (error) {
+      if (isStorageLimitError(error)) throw new Error('STORAGE_LIMIT');
+      throw error;
+    }
+  }
+
+  function saveBestEffort() {
+    try { save(); return true; }
+    catch (error) { console.warn('Yueji local save skipped', error); return false; }
+  }
+
   function ensureStateShape() {
     state.weRead = state.weRead && typeof state.weRead === 'object' ? state.weRead : {};
     state.weRead.lastSync = n(state.weRead.lastSync);
+    state.weRead.progressCursor = n(state.weRead.progressCursor);
+    state.weRead.notesCursor = n(state.weRead.notesCursor);
+    state.weRead.progressDone = Boolean(state.weRead.progressDone);
+    state.weRead.notesDone = Boolean(state.weRead.notesDone);
+    state.weRead.reviewCursors = state.weRead.reviewCursors && typeof state.weRead.reviewCursors === 'object' ? state.weRead.reviewCursors : {};
+    state.weRead.autoRetryBlocked = Boolean(state.weRead.autoRetryBlocked);
     state.weRead.daily = state.weRead.daily && typeof state.weRead.daily === 'object' ? state.weRead.daily : {};
     state.books.forEach(b => {
       if (!Array.isArray(b.sources)) {
@@ -41,7 +75,7 @@
     (state.highlights || []).forEach(h => {
       if (!h.source) h.source = h.bookmark === WR_HIGHLIGHT_MARKER ? 'weread' : 'moon';
     });
-    save();
+    saveBestEffort();
   }
 
   function injectStyles() {
@@ -83,7 +117,7 @@
     section.id = 'wereadSettings';
     section.innerHTML = `
       <h4>微信读书同步</h4>
-      <div class="section-sub">输入微信读书 Skill Key。连接后，阅迹会在打开网页时自动补齐阅读统计、书籍进度和个人书摘；已经进入微信读书云端书架的导入书也会读取，只留在手机文件夹里的书不会读取。Key 只保存在当前浏览器，不进入阅迹 JSON 备份。</div>
+      <div class="section-sub">输入微信读书 Skill Key。连接或自动更新时先轻量同步书架和当年阅读统计；阅读进度与个人书摘按小批次继续同步，避免手机卡死。已经进入微信读书云端书架的导入书也会读取，只留在手机文件夹里的书不会读取。Key 只保存在当前浏览器，不进入阅迹 JSON 备份。</div>
       <div class="wr-connect-row">
         <input id="wereadKeyInput" class="wr-key" type="password" autocomplete="off" placeholder="Skill Key">
         <button class="primary-btn" id="wereadConnectBtn">连接并同步</button>
@@ -91,6 +125,8 @@
       <div class="wr-status" id="wereadStatus">尚未连接微信读书。</div>
       <div class="wr-actions">
         <button class="soft-btn" id="wereadSyncBtn">立即同步</button>
+        <button class="soft-btn" id="wereadContinueBtn">继续同步进度与书摘</button>
+        <button class="soft-btn" id="wereadStopBtn" disabled>暂停同步</button>
         <button class="soft-btn" id="wereadDisconnectBtn">断开连接</button>
         <label class="soft-btn" style="display:inline-flex;align-items:center;cursor:pointer">导入微信读书 JSON<input id="wereadJsonFile" type="file" accept=".json,application/json" hidden></label>
       </div>`;
@@ -101,29 +137,44 @@
       const val = document.getElementById('wereadKeyInput').value.trim();
       if (!val) return setWeReadStatus('请先填入 Skill Key。', true);
       localStorage.setItem(EXT_KEY, val);
-      await syncWeRead({ full: false, manual: true });
+      state.weRead.autoRetryBlocked = false;
+      try{await saveCheckpoint()}catch(e){return setWeReadStatus('浏览器本地储存空间不足，请先导出备份，再清理空间。',true)}
+      await syncWeRead({ mode: 'quick', manual: true });
     });
     document.getElementById('wereadSyncBtn').addEventListener('click', async () => {
       if (!localStorage.getItem(EXT_KEY)) return setWeReadStatus('还没有保存 Skill Key。', true);
-      await syncWeRead({ full: false, manual: true });
+      state.weRead.autoRetryBlocked = false;
+      try{await saveCheckpoint()}catch(e){return setWeReadStatus('浏览器本地储存空间不足，请先导出备份，再清理空间。',true)}
+      await syncWeRead({ mode: 'quick', manual: true });
     });
+    document.getElementById('wereadContinueBtn').addEventListener('click', async () => {
+      if (!localStorage.getItem(EXT_KEY)) return setWeReadStatus('还没有保存 Skill Key。', true);
+      await syncWeRead({ mode: 'continue', manual: true });
+    });
+    document.getElementById('wereadStopBtn').addEventListener('click', () => stopActiveSync());
     document.getElementById('wereadDisconnectBtn').addEventListener('click', () => {
       localStorage.removeItem(EXT_KEY);
+      stopActiveSync(false);
       document.getElementById('wereadKeyInput').value = '';
       setWeReadStatus('已断开微信读书。阅迹里已经同步过的数据不会删除。');
       updateSourcePill();
     });
-    document.getElementById('wereadJsonFile').addEventListener('change',async e=>{const file=e.target.files?.[0];if(!file)return;try{await importWeReadFile(file);e.target.value=''}catch(err){setWeReadStatus('导入失败：'+String(err?.message||err),true)}});
+    document.getElementById('wereadJsonFile').addEventListener('change',async e=>{const file=e.target.files?.[0];if(!file)return;try{await importWeReadFile(file);e.target.value=''}catch(err){const msg=String(err?.message||err);setWeReadStatus(msg==='STORAGE_LIMIT'?'浏览器本地储存空间不足，导入已停止。原有数据没有删除，请先导出备份。':'导入失败：'+msg,true)}});
     updateWeReadStatus();
   }
 
   async function importWeReadFile(file){
+    if(window.yuejiHighlightsReady)await window.yuejiHighlightsReady;
     const data=JSON.parse(await file.text()),shelf=data.shelf||data.data?.shelf||data,books=Array.isArray(shelf.books)?shelf.books:Array.isArray(data.books)?data.books:[],progressRows=Array.isArray(data.progress)?data.progress:Array.isArray(data.progresses)?data.progresses:[];
     if(!books.length)throw new Error('文件里没有找到微信读书书架 books[]');
     const progressMap=new Map(progressRows.map(x=>[String(x.bookId||x.book?.bookId||''),x]));
-    let imported=0;books.forEach(raw=>{const merged=mergeBookFromWeRead(raw,progressMap.get(String(raw.bookId)));if(merged)imported++});
+    let imported=0;
+    for(let i=0;i<books.length;i++){
+      const raw=books[i],merged=mergeBookFromWeRead(raw,progressMap.get(String(raw.bookId)));if(merged)imported++;
+      if((i+1)%25===0){setWeReadStatus(`正在分批导入书架 ${i+1}/${books.length}……`);await yieldToBrowser()}
+    }
     const daily=data.daily||data.readDays||data.readdata?.daily;if(daily&&typeof daily==='object'&&!Array.isArray(daily))replaceWeReadDaily(daily);
-    state.weRead.lastSync=Date.now();state.source=state.books.some(b=>b.sources?.includes('moon'))?'多源阅读档案':'微信读书';save();renderAllSafe();updateSourcePill();updateWeReadStatus(`已从 JSON 导入 ${imported} 本书`);toast('微信读书 JSON 已导入');
+    state.weRead.lastSync=Date.now();state.source=state.books.some(b=>b.sources?.includes('moon'))?'多源阅读档案':'微信读书';await saveCheckpoint();renderAllSafe();updateSourcePill();updateWeReadStatus(`已从 JSON 导入 ${imported} 本书`);toast('微信读书 JSON 已导入');
   }
 
   function setWeReadStatus(text, isError = false) {
@@ -144,10 +195,37 @@
     el.innerHTML = `<strong>已连接</strong> · 上次同步：${esc(lastText)}<br>已保存 ${days} 天微信读书日级时长 · ${wrBooks} 本微信读书书籍${extra ? `<br>${esc(extra)}` : ''}`;
   }
 
-  async function wereadCall(apiName, params = {}) {
+  function syncButtonState(running) {
+    ['wereadConnectBtn','wereadSyncBtn','wereadContinueBtn'].forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=running});
+    const stop=document.getElementById('wereadStopBtn'); if(stop)stop.disabled=!running;
+  }
+
+  function beginSync(mode) {
+    if (activeSync) return null;
+    activeSync = { mode, cancelled:false, started:Date.now(), deadline:Date.now()+SYNC_DEADLINE_MS, requests:0, maxRequests:mode==='quick'?24:50, controller:null };
+    window.__yuejiWeReadSyncing = true; syncButtonState(true); return activeSync;
+  }
+
+  function assertSyncActive(ctx) {
+    if (!ctx || ctx !== activeSync || ctx.cancelled) throw new Error('SYNC_PAUSED');
+    if (Date.now() > ctx.deadline) throw new Error('SYNC_TIME_LIMIT');
+  }
+
+  function stopActiveSync(showStatus=true) {
+    if (!activeSync) return;
+    activeSync.cancelled = true;
+    try { activeSync.controller?.abort(); } catch {}
+    if (showStatus) setWeReadStatus('同步已暂停。已完成的数据已经保存，可以稍后点“继续同步进度与书摘”。');
+  }
+
+  async function wereadCall(apiName, params = {}, ctx = activeSync) {
     const key = localStorage.getItem(EXT_KEY);
     if (!key) throw new Error('没有 Skill Key');
+    if (ctx) assertSyncActive(ctx);
+    if (ctx && ctx.requests >= ctx.maxRequests) throw new Error('SYNC_REQUEST_LIMIT');
+    if (ctx) ctx.requests++;
     const controller = new AbortController();
+    if (ctx) ctx.controller = controller;
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     let res;
     try {
@@ -158,14 +236,19 @@
         signal: controller.signal
       });
     } catch (error) {
-      if (error?.name === 'AbortError') throw new Error('微信读书响应超时，请稍后重试；已经同步的数据会保留');
+      if (error?.name === 'AbortError') {
+        if (ctx?.cancelled) throw new Error('SYNC_PAUSED');
+        throw new Error('微信读书响应超时，请稍后重试；已经同步的数据会保留');
+      }
       throw error;
     } finally {
       clearTimeout(timer);
+      if (ctx?.controller === controller) ctx.controller = null;
     }
     let data;
     try { data = await res.json(); } catch { throw new Error(`微信读书返回了无法解析的响应（${res.status}）`); }
     if (!res.ok || data?.errcode && data.errcode !== 0) throw new Error(data?.errmsg || data?.message || `微信读书接口错误（${res.status}）`);
+    if (ctx) assertSyncActive(ctx);
     return data?.data && typeof data.data === 'object' ? data.data : data;
   }
 
@@ -222,7 +305,7 @@
     return out;
   }
 
-  async function fetchHistoryDaily(overall, full) {
+  async function fetchHistoryDaily(overall, full, ctx = activeSync) {
     const daily = {};
     const nowYear = new Date().getFullYear();
     let firstYear = nowYear;
@@ -232,7 +315,7 @@
     for (let year = firstYear; year <= nowYear; year++) {
       setWeReadStatus(`正在同步 ${year} 年阅读时间……`);
       const baseTime = Math.floor(new Date(year, 5, 15).getTime() / 1000);
-      const annual = await wereadCall('/readdata/detail', { mode:'annually', baseTime });
+      const annual = await wereadCall('/readdata/detail', { mode:'annually', baseTime }, ctx);
       Object.assign(daily, parseReadTimesObject(annual.dailyReadTimes));
       if (!annual.dailyReadTimes || !Object.keys(annual.dailyReadTimes).length) {
         const monthBuckets = annual.readTimes || {};
@@ -241,7 +324,7 @@
         for (const month of uniqMonths) {
           if (year===nowYear && month>new Date().getMonth()+1) continue;
           const monthBase = Math.floor(new Date(year, month-1, 15).getTime()/1000);
-          const m = await wereadCall('/readdata/detail', { mode:'monthly', baseTime:monthBase });
+          const m = await wereadCall('/readdata/detail', { mode:'monthly', baseTime:monthBase }, ctx);
           Object.assign(daily, parseReadTimesObject(m.readTimes));
           await sleep(40);
         }
@@ -258,81 +341,116 @@
     return out;
   }
 
-  async function syncShelfAndProgress() {
+  async function syncShelfBase(ctx) {
     setWeReadStatus('正在读取微信读书书架……');
-    const shelf = await wereadCall('/shelf/sync');
-    const books = Array.isArray(shelf.books) ? shelf.books : [];
-    books.forEach(b=>mergeBookFromWeRead(b));
-    save(); renderAllSafe(); updateSourcePill();
-    const started = books.filter(b => b.readUpdateTime || b.finishReading===1);
-    let completed=0;
-    const progressResults = await mapConcurrent(started,3,async b => {
-      const p=await wereadCall('/book/getprogress',{bookId:b.bookId});
-      completed++; setWeReadStatus(`书架已保存，正在补阅读进度 ${completed}/${started.length}……`);
-      await sleep(30); return {raw:b,progress:p};
+    const shelf = await wereadCall('/shelf/sync', {}, ctx);
+    const seen = new Set();
+    const books = (Array.isArray(shelf.books) ? shelf.books : []).filter(b=>{
+      const id=String(b?.bookId||''); if(!id||seen.has(id))return false; seen.add(id); return true;
     });
-    const progressById = new Map(progressResults.filter(x=>x&&!x.__error).map(x=>[String(x.raw.bookId),x.progress]));
-    books.forEach(b=>mergeBookFromWeRead(b,progressById.get(String(b.bookId))));
-    save(); renderAllSafe();
-    return books.length;
-  }
-
-  async function fetchAllNotebooks() {
-    const all=[]; let lastSort;
-    for(let guard=0;guard<100;guard++){
-      const params={count:20}; if(lastSort) params.lastSort=lastSort;
-      const data=await wereadCall('/user/notebooks',params); const rows=Array.isArray(data.books)?data.books:[]; all.push(...rows);
-      if(!data.hasMore||!rows.length) break; lastSort=rows[rows.length-1].sort;
+    for(let i=0;i<books.length;i++){
+      assertSyncActive(ctx); mergeBookFromWeRead(books[i]);
+      if((i+1)%25===0){setWeReadStatus(`正在分批整理书架 ${i+1}/${books.length}……`);await yieldToBrowser()}
     }
-    return all;
+    await saveCheckpoint();
+    return books;
   }
 
-  async function syncNotes() {
-    setWeReadStatus('正在同步微信读书书摘和想法……');
-    const notebooks = await fetchAllNotebooks();
-    const existingNonWr = (state.highlights||[]).filter(h=>h.source!=='weread' && h.bookmark!==WR_HIGHLIGHT_MARKER);
-    const existingWr = (state.highlights||[]).filter(h=>h.source==='weread' || h.bookmark===WR_HIGHLIGHT_MARKER);
-    const wrHighlights=[];
-    let completed=0;
-    await mapConcurrent(notebooks,3,async nb=>{
+  async function syncProgressBatch(books, ctx) {
+    const started=books.filter(b=>b.readUpdateTime||b.finishReading===1).sort((a,b)=>n(b.readUpdateTime)-n(a.readUpdateTime));
+    if(state.weRead.progressDone)return {done:true,completed:started.length,total:started.length};
+    const start=Math.min(n(state.weRead.progressCursor),started.length);
+    const batch=started.slice(start,start+PROGRESS_BATCH_SIZE); let completed=0;
+    for(const b of batch){
+      assertSyncActive(ctx); setWeReadStatus(`正在分批补阅读进度 ${start+completed+1}/${started.length}……`);
+      try{const p=await wereadCall('/book/getprogress',{bookId:b.bookId},ctx);mergeBookFromWeRead(b,p)}catch(e){if(/^SYNC_/.test(e.message))throw e;console.warn('WeRead progress skipped',e)}
+      completed++; await sleep(20);
+    }
+    const done=start+completed>=started.length; state.weRead.progressCursor=done?0:start+completed; state.weRead.progressDone=done; await saveCheckpoint();
+    return {done,completed:start+completed,total:started.length};
+  }
+
+  async function fetchAllNotebooks(ctx) {
+    const all=[]; let lastSort; const seenCursors=new Set();
+    for(let guard=0;guard<NOTEBOOK_PAGE_LIMIT;guard++){
+      const params={count:20}; if(lastSort) params.lastSort=lastSort;
+      const data=await wereadCall('/user/notebooks',params,ctx); const rows=Array.isArray(data.books)?data.books:[]; all.push(...rows);
+      if(!data.hasMore||!rows.length) break;
+      const next=rows[rows.length-1]?.sort;
+      if(next===undefined||next===null||next===''||String(next)===String(lastSort)||seenCursors.has(String(next)))break;
+      seenCursors.add(String(next)); lastSort=next;
+    }
+    const dedup=new Map(); all.forEach(nb=>{const id=String(nb?.book?.bookId||nb?.bookId||'');if(id&&!dedup.has(id))dedup.set(id,nb)});
+    return [...dedup.values()];
+  }
+
+  async function syncNotesBatch(ctx) {
+    setWeReadStatus('正在读取微信读书笔记目录……');
+    if(state.weRead.notesDone)return {done:true,completed:state.weRead.notebooksTotal||0,total:state.weRead.notebooksTotal||0};
+    const notebooks=notebooksCache.length?notebooksCache:await fetchAllNotebooks(ctx);
+    if(!notebooksCache.length){notebooksCache=notebooks;state.weRead.notebooksTotal=notebooks.length;await saveCheckpoint()}
+    const start=Math.min(n(state.weRead.notesCursor),notebooks.length),batch=notebooks.slice(start,start+NOTES_BATCH_SIZE);
+    const dedup=new Map((state.highlights||[]).map(h=>[h.id,h])); let completed=0;
+    for(const nb of batch){
+      assertSyncActive(ctx); setWeReadStatus(`正在分批同步书摘 ${start+completed+1}/${notebooks.length}……`);
       const rawBook=nb.book||{bookId:nb.bookId}; const merged=mergeBookFromWeRead(rawBook,{book:{progress:n(nb.readingProgress)}});
-      if(!merged||!rawBook.bookId) return;
+      if(!merged||!rawBook.bookId){completed++;continue}
+      const bookRows=[];
       try{
-        const marks=await wereadCall('/book/bookmarklist',{bookId:rawBook.bookId});
-        (marks.updated||[]).forEach(x=>{ if(!x.markText)return; wrHighlights.push({id:`wr-mark:${x.bookmarkId||Math.random()}`,bookKey:merged.key,date:safeDate(x.createTime)||todayKey,time:n(x.createTime)*1000,quote:x.markText,note:'',bookmark:WR_HIGHLIGHT_MARKER,source:'weread',sourceId:x.bookmarkId||''}); });
-      }catch(e){console.warn('WeRead bookmarks skipped',e)}
+        const marks=await wereadCall('/book/bookmarklist',{bookId:rawBook.bookId},ctx);
+        (marks.updated||[]).forEach(x=>{if(!x.markText)return;const h={id:`wr-mark:${x.bookmarkId||`${rawBook.bookId}:${normalizeText(x.markText).slice(0,40)}`}`,bookKey:merged.key,date:safeDate(x.createTime)||todayKey,time:n(x.createTime)*1000,quote:x.markText,note:'',bookmark:WR_HIGHLIGHT_MARKER,source:'weread',sourceId:x.bookmarkId||''};dedup.set(h.id,h);bookRows.push(h)});
+      }catch(e){if(/^SYNC_/.test(e.message))throw e;console.warn('WeRead bookmarks skipped',e)}
       try{
-        let synckey=0;
-        for(let guard=0;guard<100;guard++){
-          const data=await wereadCall('/review/list/mine',{bookid:rawBook.bookId,synckey,count:20});
-          (data.reviews||[]).forEach(item=>{ const r=item.review||item,content=r.content||'',abstract=r.abstract||''; if(!content&&!abstract)return; wrHighlights.push({id:`wr-review:${r.reviewId||Math.random()}`,bookKey:merged.key,date:safeDate(r.createTime)||todayKey,time:n(r.createTime)*1000,quote:abstract,note:content,bookmark:WR_HIGHLIGHT_MARKER,source:'weread',sourceId:r.reviewId||''}); });
-          if(!data.hasMore)break; synckey=data.synckey||0; if(!synckey)break;
+        const reviewKey=String(rawBook.bookId),seenSyncKeys=new Set(); let synckey=state.weRead.reviewCursors[reviewKey]||0,reviewComplete=false;
+        for(let guard=0;guard<REVIEW_PAGE_LIMIT;guard++){
+          const data=await wereadCall('/review/list/mine',{bookid:rawBook.bookId,synckey,count:20},ctx);
+          const pageRows=[];(data.reviews||[]).forEach(item=>{const r=item.review||item,content=r.content||'',abstract=r.abstract||'';if(!content&&!abstract)return;const h={id:`wr-review:${r.reviewId||`${rawBook.bookId}:${normalizeText(content||abstract).slice(0,40)}`}`,bookKey:merged.key,date:safeDate(r.createTime)||todayKey,time:n(r.createTime)*1000,quote:abstract,note:content,bookmark:WR_HIGHLIGHT_MARKER,source:'weread',sourceId:r.reviewId||''};dedup.set(h.id,h);pageRows.push(h)});
+          state.highlights=[...dedup.values()];
+          if(!data.hasMore){delete state.weRead.reviewCursors[reviewKey];reviewComplete=true;await saveCheckpoint({highlightRows:[...bookRows,...pageRows]});bookRows.length=0;break}
+          const next=data.synckey;
+          if(!next||String(next)===String(synckey)||seenSyncKeys.has(String(next))){delete state.weRead.reviewCursors[reviewKey];reviewComplete=true;await saveCheckpoint({highlightRows:[...bookRows,...pageRows]});bookRows.length=0;break}
+          seenSyncKeys.add(String(next)); synckey=next; state.weRead.reviewCursors[reviewKey]=synckey; await saveCheckpoint({highlightRows:[...bookRows,...pageRows]});bookRows.length=0;
         }
-      }catch(e){console.warn('WeRead reviews skipped',e)}
-      completed++; setWeReadStatus(`正在补书摘和想法 ${completed}/${notebooks.length}……`);
-      await sleep(35);
-    });
-    const dedup=new Map(existingWr.map(h=>[h.id,h])); wrHighlights.forEach(h=>dedup.set(h.id,h)); state.highlights=[...existingNonWr,...dedup.values()];
-    return notebooks.length;
+        if(!reviewComplete)throw new Error('SYNC_BATCH_LIMIT');
+      }catch(e){if(/^SYNC_/.test(e.message))throw e;console.warn('WeRead reviews skipped',e)}
+      completed++; state.highlights=[...dedup.values()]; state.weRead.notesCursor=start+completed; await saveCheckpoint({highlightRows:bookRows}); await yieldToBrowser();
+    }
+    const done=start+completed>=notebooks.length; state.weRead.notesCursor=done?0:start+completed; state.weRead.notesDone=done;if(done)notebooksCache=[];state.highlights=[...dedup.values()]; await saveCheckpoint();
+    return {done,completed:start+completed,total:notebooks.length};
   }
 
-  async function syncWeRead({full=false,manual=false}={}) {
-    if(window.__yuejiWeReadSyncing)return; window.__yuejiWeReadSyncing=true;
+  async function syncWeRead({mode='quick',manual=false}={}) {
+    if(window.yuejiHighlightsReady)await window.yuejiHighlightsReady;
+    const ctx=beginSync(mode); if(!ctx)return setWeReadStatus('已有同步任务正在进行，可以先点“暂停同步”。');
     try{
       setWeReadStatus('正在连接微信读书……');
-      await wereadCall('/_list');
-      const overall=await wereadCall('/readdata/detail',{mode:'overall'});
-      const bookCount=await syncShelfAndProgress();
-      setWeReadStatus(`已保存 ${bookCount} 个书架条目，正在同步阅读日历……`);
-      const daily=await fetchHistoryDaily(overall,full); replaceWeReadDaily(daily); save(); renderAllSafe();
-      const noteBooks=await syncNotes();
-      state.weRead.lastSync=Date.now(); state.weRead.skillVersion=SKILL_VERSION; state.weRead.registTime=overall?.registTime||state.weRead.registTime||0;
-      state.source=state.books.some(b=>b.sources?.includes('moon'))?'多源阅读档案':'微信读书'; save();
-      renderAllSafe(); updateSourcePill(); updateWeReadStatus(`本次同步：${Object.keys(daily).length} 天日级统计 · ${bookCount} 个书架条目 · ${noteBooks} 本有笔记书籍`); toast('微信读书已同步');
+      await wereadCall('/_list',{},ctx);
+      const books=await syncShelfBase(ctx);
+      let extra;
+      if(mode==='quick'){
+        const overall=await wereadCall('/readdata/detail',{mode:'overall'},ctx);
+        setWeReadStatus(`书架已保存 ${books.length} 本，正在同步今年的阅读日历……`);
+        const daily=await fetchHistoryDaily(overall,false,ctx); replaceWeReadDaily(daily);
+        state.weRead.lastSync=Date.now(); state.weRead.registTime=overall?.registTime||state.weRead.registTime||0; state.weRead.autoRetryBlocked=false;
+        state.weRead.progressCursor=0;state.weRead.notesCursor=0;state.weRead.progressDone=false;state.weRead.notesDone=false;state.weRead.reviewCursors={};notebooksCache=[];
+        extra=`基础同步完成：${books.length} 本书 · ${Object.keys(daily).length} 天记录。进度和书摘请点“继续同步”。`;
+      }else{
+        const progress=await syncProgressBatch(books,ctx),notes=await syncNotesBatch(ctx);
+        extra=`本批完成：阅读进度 ${progress.completed}/${progress.total} · 书摘 ${notes.completed}/${notes.total}${progress.done&&notes.done?'，全部补齐':'。可再次点“继续同步”处理下一批'}`;
+      }
+      state.weRead.skillVersion=SKILL_VERSION;
+      state.source=state.books.some(b=>b.sources?.includes('moon'))?'多源阅读档案':'微信读书'; await saveCheckpoint();
+      renderAllSafe(); updateSourcePill(); updateWeReadStatus(extra); toast(mode==='quick'?'微信读书基础数据已同步':'本批数据已同步');
     }catch(e){
-      console.error(e); const msg=String(e?.message||e); const cors=/failed to fetch|networkerror|load failed/i.test(msg);
-      setWeReadStatus(cors?'连接失败：微信读书中转服务没有响应。Skill Key 和原始数据没有被修改；请确认当前网页部署在 Netlify，并稍后重试。':`同步未完成：${msg}。此前已经完成的书架或统计会保留，可以稍后继续。`,true); if(manual)toast('微信读书同步未完成');
-    }finally{window.__yuejiWeReadSyncing=false}
+      const msg=String(e?.message||e); if(!/^SYNC_/.test(msg))console.error(e);
+      if(msg==='SYNC_PAUSED')setWeReadStatus('同步已暂停。已完成的数据已经保存，可以稍后继续。');
+      else if(msg==='SYNC_TIME_LIMIT')setWeReadStatus('本次同步已运行 60 秒并自动暂停。已完成的数据已经保存，请稍后点“继续同步”。');
+      else if(msg==='SYNC_REQUEST_LIMIT')setWeReadStatus('本批已达到安全读取上限并自动暂停。已完成的数据已经保存，请稍后点“继续同步”。');
+      else if(msg==='SYNC_BATCH_LIMIT')setWeReadStatus('这本书的书摘较多，本批已安全暂停并记住位置。请再次点“继续同步”。');
+      else if(msg==='STORAGE_LIMIT')setWeReadStatus('浏览器本地储存空间不足，已停止同步。此前成功保存的数据仍然保留；请先导出备份，之后再考虑迁移到更大容量的储存。',true);
+      else{const cors=/failed to fetch|networkerror|load failed/i.test(msg);state.weRead.autoRetryBlocked=true;saveBestEffort();setWeReadStatus(cors?'连接失败：微信读书中转服务没有响应。系统不会自动反复重试，已有数据也不会删除。':`同步未完成：${msg}。系统不会自动反复重试，已完成的数据会保留。`,true);if(manual)toast('微信读书同步未完成')}
+      renderAllSafe(); updateSourcePill();
+    }finally{if(activeSync===ctx)activeSync=null;window.__yuejiWeReadSyncing=false;syncButtonState(false)}
   }
 
   function renderAllSafe(){
@@ -404,7 +522,7 @@
     const notes=document.getElementById('notesList'); if(notes)new MutationObserver(()=>patchNoteSources()).observe(notes,{childList:true,subtree:true});
   }
 
-  async function autoSyncIfNeeded(){const key=localStorage.getItem(EXT_KEY);if(!key)return;if(Date.now()-n(state.weRead.lastSync)<AUTO_SYNC_MS)return;await syncWeRead({full:false,manual:false})}
+  async function autoSyncIfNeeded(){const key=localStorage.getItem(EXT_KEY);if(!key||state.weRead.autoRetryBlocked)return;if(Date.now()-n(state.weRead.lastSync)<AUTO_SYNC_MS)return;await syncWeRead({mode:'quick',manual:false})}
 
   function init(){ensureStateShape();injectStyles();injectSettings();injectEvolution();installHooks();updateSourcePill();renderEvolution();patchNoteSources();setTimeout(autoSyncIfNeeded,700)}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
