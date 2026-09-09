@@ -1,12 +1,15 @@
 (()=>{
   'use strict';
+  if(window.__yuejiP0AutoLockInstalled)return;
+  window.__yuejiP0AutoLockInstalled=true;
 
   const AUTO_SYNC_MS=6*60*60*1000;
   const gate=window.__yuejiP0AutoGate||{};
   const started=Number(gate.startedAt)||Date.now();
   const delay=Math.max(0,900-(Date.now()-started));
 
-  setTimeout(()=>{
+  setTimeout(async()=>{
+    try{if(window.yuejiP0InflightReady)await window.yuejiP0InflightReady}catch(error){console.warn('Yueji inflight recovery did not finish before auto sync',error)}
     const previousBlocked=Boolean(gate.previousBlocked);
     if(state.weRead&&typeof state.weRead==='object')state.weRead.autoRetryBlocked=previousBlocked;
     delete window.__yuejiP0AutoGate;
