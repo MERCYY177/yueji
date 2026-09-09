@@ -17,7 +17,7 @@
     const key=localStorage.getItem('yueji-weread-key');
     const lastSync=Number(state.weRead?.lastSync)||0;
     const due=Date.now()-lastSync>=AUTO_SYNC_MS;
-    if(previousBlocked||!key||!due||window.__yuejiWeReadSyncing||window.__yuejiArchiveBusy)return;
+    if(previousBlocked||state.weRead?.p0RuntimeHealthy===false||!key||!due||window.__yuejiWeReadSyncing||window.__yuejiWeReadSyncStarting||window.__yuejiArchiveBusy)return;
 
     const button=document.getElementById('wereadSyncBtn');
     if(!button||button.disabled)return;
