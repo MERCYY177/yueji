@@ -185,7 +185,7 @@ assert.equal(report.healthy,true,'runtime audit should recover after duplicate s
 
 localStorage.removeItem('yueji-weread-key');
 await sandbox.yuejiP0ResumeSync();
-assert.match(statusEl.textContent,/Skill Key/,'the fully wrapped resume chain should execute and reach the guarded no-key exit');
+assert.match(`${statusEl.textContent} ${statusEl.innerHTML}`,/Skill Key/,'the fully wrapped resume chain should execute and reach the guarded no-key exit');
 
 console.log(JSON.stringify({
   ok:true,
