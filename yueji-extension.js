@@ -11,6 +11,7 @@
   const NOTES_BATCH_SIZE = 3;
   const NOTEBOOK_PAGE_LIMIT = 20;
   const REVIEW_PAGE_LIMIT = 4;
+  const API_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
   const JSON_WORKER_THRESHOLD = 256 * 1024;
   const WR_SESSION_PREFIX = 'weread-day:';
   const WR_HIGHLIGHT_MARKER = '__YUEJI_WEREAD__';
@@ -127,6 +128,10 @@
     state.weRead.notebooksTotal = n(state.weRead.notebooksTotal);
     state.weRead.shelfTotal = n(state.weRead.shelfTotal);
     state.weRead.statsDays = n(state.weRead.statsDays);
+    state.weRead.statsSyncYear = n(state.weRead.statsSyncYear);
+    state.weRead.statsMonthCursor = n(state.weRead.statsMonthCursor);
+    state.weRead.statsDone = state.weRead.statsDone === undefined ? Boolean(state.weRead.lastSync) : Boolean(state.weRead.statsDone);
+    state.weRead.interruptedAt = n(state.weRead.interruptedAt);
     state.weRead.syncState = String(state.weRead.syncState || (state.weRead.lastSync ? 'base-complete' : 'idle'));
     state.weRead.reviewCursors = state.weRead.reviewCursors && typeof state.weRead.reviewCursors === 'object' ? state.weRead.reviewCursors : {};
     state.weRead.shelfBooks = Array.isArray(state.weRead.shelfBooks) ? state.weRead.shelfBooks : [];
@@ -148,7 +153,7 @@
     (state.highlights || []).forEach(h => {
       if (!h.source) h.source = h.bookmark === WR_HIGHLIGHT_MARKER ? 'weread' : 'moon';
     });
-    if(state.weRead.syncState==='running')state.weRead.syncState='paused';
+    if(state.weRead.syncState==='running'){state.weRead.syncState='paused';state.weRead.interruptedAt=Date.now()}
     rebuildBookIndexes();
     saveBestEffort();
   }
@@ -217,7 +222,7 @@
         <button class="primary-btn" id="wereadConnectBtn">连接并同步</button>
       </div>
       <div class="wr-status" id="wereadStatus">尚未连接微信读书。</div>
-      <div class="wr-progress" id="wereadProgressPanel"></div>
+      <div class="wr-progress" id="wereadProgressPanel"><div class="wr-progress-head"><b>正在恢复本地同步状态……</b></div></div>
       <div class="wr-actions">
         <button class="soft-btn" id="wereadSyncBtn">更新基础数据</button>
         <button class="soft-btn" id="wereadContinueBtn">继续未完成同步</button>
@@ -287,7 +292,7 @@
   }
 
   function syncStateLabel(){const key=localStorage.getItem(EXT_KEY);if(!key)return'未连接';return({running:'同步中',paused:'已暂停',error:'部分失败',complete:'全部完成','base-complete':'基础数据完成',idle:'等待同步'})[state.weRead.syncState]||'等待同步'}
-  function updateWeReadProgressPanel(){const panel=document.getElementById('wereadProgressPanel');if(!panel)return;const progressTotal=n(state.weRead.progressTotal),notesTotal=n(state.weRead.notebooksTotal),progressDone=state.weRead.progressDone?progressTotal:n(state.weRead.progressCursor),notesDone=state.weRead.notesDone?notesTotal:n(state.weRead.notesCursor),last=state.weRead.lastSync?new Date(state.weRead.lastSync).toLocaleString('zh-CN',{hour12:false}):'尚未完成';panel.innerHTML=`<div class="wr-progress-head"><b>${esc(syncStateLabel())}</b><span>最后更新：${esc(last)}</span></div><div class="wr-progress-grid"><div class="wr-progress-item"><span>书架</span><strong>${n(state.weRead.shelfTotal)} 本</strong></div><div class="wr-progress-item"><span>阅读统计</span><strong>${n(state.weRead.statsDays)} 天</strong></div><div class="wr-progress-item"><span>阅读进度</span><strong>${progressDone} / ${progressTotal || '待读取'}</strong></div><div class="wr-progress-item"><span>书摘书目</span><strong>${notesDone} / ${notesTotal || '待读取'}</strong></div></div>`}
+  function updateWeReadProgressPanel(){const panel=document.getElementById('wereadProgressPanel');if(!panel)return;const progressTotal=n(state.weRead.progressTotal),notesTotal=n(state.weRead.notebooksTotal),progressDone=state.weRead.progressDone?progressTotal:n(state.weRead.progressCursor),notesDone=state.weRead.notesDone?notesTotal:n(state.weRead.notesCursor),last=state.weRead.lastSync?new Date(state.weRead.lastSync).toLocaleString('zh-CN',{hour12:false}):'尚未完成',monthProgress=!state.weRead.statsDone&&state.weRead.statsSyncYear?`${Math.min(n(state.weRead.statsMonthCursor),12)} 月已保存`:`${n(state.weRead.statsDays)} 天`;panel.innerHTML=`<div class="wr-progress-head"><b>${esc(syncStateLabel())}</b><span>最后更新：${esc(last)}</span></div><div class="wr-progress-grid"><div class="wr-progress-item"><span>书架</span><strong>${n(state.weRead.shelfTotal)} 本</strong></div><div class="wr-progress-item"><span>阅读统计</span><strong>${esc(monthProgress)}</strong></div><div class="wr-progress-item"><span>阅读进度</span><strong>${progressDone} / ${progressTotal || '待读取'}</strong></div><div class="wr-progress-item"><span>书摘书目</span><strong>${notesDone} / ${notesTotal || '待读取'}</strong></div></div>`}
 
   function updateWeReadStatus(extra = '') {
     const el = document.getElementById('wereadStatus');
@@ -298,7 +303,8 @@
     const lastText = last ? `${last.getFullYear()}-${pad(last.getMonth()+1)}-${pad(last.getDate())} ${pad(last.getHours())}:${pad(last.getMinutes())}` : '尚未完成首次同步';
     const days = Object.keys(state.weRead.daily || {}).length;
     const wrBooks = state.books.filter(b => b.sources?.includes('weread')).length;
-    el.innerHTML = `<strong>已连接</strong> · 上次同步：${esc(lastText)}<br>已保存 ${days} 天微信读书日级时长 · ${wrBooks} 本微信读书书籍${extra ? `<br>${esc(extra)}` : ''}`;
+    const recovery=!extra&&state.weRead.interruptedAt?'上次同步被浏览器中断，已恢复为暂停；已保存的数据仍然保留。':'';
+    el.innerHTML = `<strong>已连接</strong> · 上次同步：${esc(lastText)}<br>已保存 ${days} 天微信读书日级时长 · ${wrBooks} 本微信读书书籍${extra||recovery ? `<br>${esc(extra||recovery)}` : ''}`;
     updateWeReadProgressPanel();
   }
 
@@ -310,7 +316,7 @@
   function beginSync(mode) {
     if (activeSync) return null;
     activeSync = { mode, cancelled:false, started:Date.now(), deadline:Date.now()+SYNC_DEADLINE_MS, requests:0, maxRequests:mode==='quick'?24:50, controller:null };
-    rebuildBookIndexes();state.weRead.syncState='running';window.__yuejiWeReadSyncing = true; syncButtonState(true);updateWeReadProgressPanel(); return activeSync;
+    rebuildBookIndexes();state.weRead.syncState='running';state.weRead.interruptedAt=0;saveBestEffort();window.__yuejiWeReadSyncing = true; syncButtonState(true);updateWeReadProgressPanel(); return activeSync;
   }
 
   function assertSyncActive(ctx) {
@@ -324,6 +330,8 @@
     try { activeSync.controller?.abort(); } catch {}
     state.weRead.syncState='paused';saveBestEffort();if (showStatus) setWeReadStatus('同步已暂停。已完成的数据已经保存，可以稍后点“继续未完成同步”。');
   }
+
+  async function readApiResponseText(res,ctx){const declared=n(res.headers.get('content-length'));if(declared>API_RESPONSE_MAX_BYTES)throw new Error('微信读书单次返回数据过大，已安全停止');if(!res.body?.getReader){const text=await res.text();if(new Blob([text]).size>API_RESPONSE_MAX_BYTES)throw new Error('微信读书单次返回数据过大，已安全停止');return text}const reader=res.body.getReader(),decoder=new TextDecoder(),parts=[];let total=0;try{while(true){if(ctx)assertSyncActive(ctx);const {done,value}=await reader.read();if(done)break;total+=value.byteLength;if(total>API_RESPONSE_MAX_BYTES){await reader.cancel();throw new Error('微信读书单次返回数据过大，已安全停止')}parts.push(decoder.decode(value,{stream:true}));if(parts.length%8===0)await yieldToBrowser()}parts.push(decoder.decode());return parts.join('')}finally{try{reader.releaseLock()}catch{}}}
 
   async function wereadCall(apiName, params = {}, ctx = activeSync) {
     const key = localStorage.getItem(EXT_KEY);
@@ -355,7 +363,7 @@
       if (ctx?.controller === controller) ctx.controller = null;
     }
     let data;
-    try { data = await parseJsonText(await res.text()); } catch { throw new Error(`微信读书返回了无法解析的响应（${res.status}）`); }
+    try {const text=await readApiResponseText(res,ctx);await yieldToBrowser();data=JSON.parse(text)} catch(error){if(/^SYNC_|数据过大/.test(String(error?.message||'')))throw error;throw new Error(`微信读书返回了无法解析的响应（${res.status}）`);}
     if (!res.ok || data?.errcode && data.errcode !== 0) throw new Error(data?.errmsg || data?.message || `微信读书接口错误（${res.status}）`);
     if (ctx) assertSyncActive(ctx);
     return data?.data && typeof data.data === 'object' ? data.data : data;
@@ -417,34 +425,8 @@
     return out;
   }
 
-  async function fetchHistoryDaily(overall, full, ctx = activeSync) {
-    const daily = {};
-    const nowYear = new Date().getFullYear();
-    let firstYear = nowYear;
-    if (full && overall?.registTime) firstYear = new Date(n(overall.registTime) * 1000).getFullYear();
-    if (!full && state.weRead.lastSync) firstYear = Math.max(new Date(state.weRead.lastSync).getFullYear() - 1, nowYear - 1);
-    firstYear = Math.max(2000, Math.min(firstYear, nowYear));
-    for (let year = firstYear; year <= nowYear; year++) {
-      setWeReadStatus(`正在同步 ${year} 年阅读时间……`);
-      const baseTime = Math.floor(new Date(year, 5, 15).getTime() / 1000);
-      const annual = await wereadCall('/readdata/detail', { mode:'annually', baseTime }, ctx);
-      Object.assign(daily, parseReadTimesObject(annual.dailyReadTimes));
-      if (!annual.dailyReadTimes || !Object.keys(annual.dailyReadTimes).length) {
-        const monthBuckets = annual.readTimes || {};
-        const months = Object.entries(monthBuckets).filter(([,sec]) => n(sec)>0).map(([ts]) => new Date(n(ts)*1000).getMonth()+1);
-        const uniqMonths = [...new Set(months.length ? months : Array.from({length:12},(_,i)=>i+1))];
-        for (const month of uniqMonths) {
-          if (year===nowYear && month>new Date().getMonth()+1) continue;
-          const monthBase = Math.floor(new Date(year, month-1, 15).getTime()/1000);
-          const m = await wereadCall('/readdata/detail', { mode:'monthly', baseTime:monthBase }, ctx);
-          Object.assign(daily, parseReadTimesObject(m.readTimes));
-          await sleep(40);
-        }
-      }
-      await sleep(50);
-    }
-    return daily;
-  }
+  function replaceWeReadMonth(year,month,daily){const prefix=`${year}-${pad(month)}`,next={...(state.weRead.daily||{})};Object.keys(next).forEach(date=>{if(date.startsWith(prefix))delete next[date]});Object.assign(next,daily);state.weRead.daily=next;state.sessions=state.sessions.filter(s=>!(s.source==='weread'&&s.aggregate===true&&String(s.date||'').startsWith(prefix)));Object.entries(daily).forEach(([date,seconds])=>{const sec=n(seconds);if(sec>0)state.sessions.push({id:`${WR_SESSION_PREFIX}${date}`,date,bookKey:'',title:'微信读书',minutes:Math.round(sec/60),seconds:sec,words:0,source:'weread',aggregate:true,precision:'daily-total'})})}
+  async function syncCurrentYearDaily(ctx=activeSync){const now=new Date(),year=now.getFullYear(),lastMonth=now.getMonth()+1;if(state.weRead.statsSyncYear!==year||state.weRead.statsDone){state.weRead.statsSyncYear=year;state.weRead.statsMonthCursor=0;state.weRead.statsDone=false;await saveCheckpoint()}let start=Math.max(0,Math.min(n(state.weRead.statsMonthCursor),lastMonth));for(let month=start+1;month<=lastMonth;month++){assertSyncActive(ctx);setWeReadStatus(`正在同步 ${year} 年 ${month} 月阅读时间（${month}/${lastMonth}）……`);const baseTime=Math.floor(new Date(year,month-1,15).getTime()/1000),result=await wereadCall('/readdata/detail',{mode:'monthly',baseTime},ctx),daily=parseReadTimesObject(result.dailyReadTimes||result.readTimes);replaceWeReadMonth(year,month,daily);state.weRead.statsMonthCursor=month;state.weRead.statsDays=Object.keys(state.weRead.daily).length;await saveCheckpoint();await yieldToBrowser()}state.weRead.statsDone=true;state.weRead.statsMonthCursor=0;state.weRead.statsDays=Object.keys(state.weRead.daily).length;await saveCheckpoint();return{year,days:state.weRead.statsDays}}
 
   async function mapConcurrent(items, limit, worker) {
     const out = new Array(items.length); let index = 0;
@@ -553,15 +535,14 @@
       }
       let extra;
       if(mode==='quick'){
-        const overall=await wereadCall('/readdata/detail',{mode:'overall'},ctx);
-        setWeReadStatus(`书架已保存 ${books.length} 本，正在同步今年的阅读日历……`);
-        const daily=await fetchHistoryDaily(overall,false,ctx); replaceWeReadDaily(daily);
-        state.weRead.lastSync=Date.now(); state.weRead.registTime=overall?.registTime||state.weRead.registTime||0; state.weRead.autoRetryBlocked=false;
-        state.weRead.statsDays=Object.keys(daily).length;
+        setWeReadStatus(`书架已保存 ${books.length} 本，正在按月同步今年的阅读日历……`);
+        const stats=await syncCurrentYearDaily(ctx);
+        state.weRead.lastSync=Date.now();state.weRead.autoRetryBlocked=false;
         if(resetDetails){state.weRead.progressCursor=0;state.weRead.notesCursor=0;state.weRead.progressDone=false;state.weRead.notesDone=false;state.weRead.progressTotal=0;state.weRead.notebooksTotal=0;state.weRead.reviewCursors={};state.weRead.notebooks=[];notebooksCache=[]}
         state.weRead.syncState=state.weRead.progressDone&&state.weRead.notesDone?'complete':'base-complete';
-        extra=`基础同步完成：${books.length} 本书 · ${Object.keys(daily).length} 天记录。进度和书摘请点“继续同步”。`;
+        extra=`基础同步完成：${books.length} 本书 · ${stats.days} 天记录。进度和书摘请点“继续同步”。`;
       }else{
+        if(!state.weRead.statsDone){setWeReadStatus('先从上次中断的月份继续同步阅读时间……');await syncCurrentYearDaily(ctx)}
         const progress=await syncProgressBatch(books,ctx),notes=await syncNotesBatch(ctx);
         state.weRead.lastSync=Date.now();state.weRead.syncState=progress.done&&notes.done?'complete':'paused';
         extra=`本批完成：阅读进度 ${progress.completed}/${progress.total} · 书摘 ${notes.completed}/${notes.total}${progress.done&&notes.done?'，全部补齐':'。可再次点“继续同步”处理下一批'}`;
