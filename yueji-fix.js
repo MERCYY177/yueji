@@ -3,7 +3,7 @@
   document.title='阅迹';
   const load=(src,done)=>{
     const s=document.createElement('script');
-    s.src=src+'?v=20260908-idb-performance-v1';
+    s.src=src+'?v=20260909-idb-v6';
     if(done)s.onload=done;
     document.head.appendChild(s);
   };

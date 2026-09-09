@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#121313" media="(prefers-color-scheme: dark)">
   <title>阅迹 · 静读天下阅读档案</title>
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="style.css?v=20260908-idb-performance-v1">
+  <link rel="stylesheet" href="style.css?v=20260909-idb-v6">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.11.0/sql-asm.js"></script>
 </head>
@@ -267,10 +267,11 @@
     <div class="diagnostic-result" id="diagnosticResult">点击检查后显示结果。</div>
     <div class="settings-actions">
       <button class="soft-btn" id="runDiagnostics">检查本地数据</button>
+      <button class="soft-btn" id="requestPersistentStorage">保护本地数据</button>
       <button class="soft-btn" id="copyDiagnostics" disabled>复制诊断信息</button>
       <button class="soft-btn" id="runStorageStress">运行压力测试</button>
     </div>
-    <div class="section-sub diagnostic-help">压力测试会在独立临时数据库中分批写入最多 10,000 条模拟书摘，完成后立即删除，不接触真实数据。</div>
+    <div class="section-sub diagnostic-help">“保护本地数据”会请求浏览器尽量不要自动清理本站储存；压力测试会在独立临时数据库中分批写入最多 10,000 条模拟书摘，完成后立即删除，不接触真实数据。</div>
   </div>
 
 </div>
@@ -313,9 +314,9 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="app.js?v=20260908-idb-performance-v1"></script>
-<script src="yueji-extension.js?v=20260908-idb-performance-v1"></script>
-<script src="yueji-fix.js?v=20260908-idb-performance-v1"></script>
-<script src="yueji-features.js?v=20260908-idb-performance-v1"></script>
+<script src="app.js?v=20260909-idb-v6"></script>
+<script src="yueji-extension.js?v=20260909-idb-v6"></script>
+<script src="yueji-fix.js?v=20260909-idb-v6"></script>
+<script src="yueji-features.js?v=20260909-idb-v6"></script>
 </body>
 </html>
