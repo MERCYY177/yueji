@@ -1,5 +1,6 @@
 const UPSTREAM = "https://i.weread.qq.com/api/agent/gateway";
 const UPSTREAM_TIMEOUT_MS = 15000;
+const UPSTREAM_MAX_BYTES = 2 * 1024 * 1024;
 
 const ALLOWED_APIS = new Set([
   "/_list",
@@ -20,6 +21,36 @@ const json = (data, status = 200, extraHeaders = {}) =>
       ...extraHeaders
     }
   });
+
+async function readBoundedText(response) {
+  const declared = Number(response.headers.get("content-length")) || 0;
+  if (declared > UPSTREAM_MAX_BYTES) throw new Error("UPSTREAM_TOO_LARGE");
+  if (!response.body?.getReader) {
+    const body = await response.text();
+    if (new TextEncoder().encode(body).byteLength > UPSTREAM_MAX_BYTES) throw new Error("UPSTREAM_TOO_LARGE");
+    return body;
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const chunks = [];
+  let bytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > UPSTREAM_MAX_BYTES) {
+        await reader.cancel();
+        throw new Error("UPSTREAM_TOO_LARGE");
+      }
+      chunks.push(decoder.decode(value, { stream: true }));
+    }
+    chunks.push(decoder.decode());
+    return chunks.join("");
+  } finally {
+    try { reader.releaseLock(); } catch {}
+  }
+}
 
 export default async (request) => {
   if (request.method !== "POST") {
@@ -64,7 +95,7 @@ export default async (request) => {
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)
     });
 
-    const body = await upstream.text();
+    const body = await readBoundedText(upstream);
     return new Response(body, {
       status: upstream.status,
       headers: {
@@ -74,6 +105,9 @@ export default async (request) => {
     });
   } catch (error) {
     console.error("WeRead gateway failed", error);
+    if (error?.message === "UPSTREAM_TOO_LARGE") {
+      return json({ message: "微信读书单次返回数据过大，已安全停止；请缩小同步范围后重试" }, 413);
+    }
     const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
     return json({ message: timedOut ? "微信读书响应超时，请稍后继续同步" : "暂时无法连接微信读书，请稍后重试" }, timedOut ? 504 : 502);
   }
