@@ -12,10 +12,10 @@
   const REVIEW_PAGE_LIMIT=6;
   const WR_HIGHLIGHT_MARKER='__YUEJI_WEREAD__';
   const nativeFetch=window.fetch.bind(window);
-  let tracking=false,retrying=false;
+  let tracking=false,retrying=false,knownFailureIds=null;
 
   const n=v=>Number(v)||0;
-  const normalizeText=s=>String(s||'').toLowerCase().replace(/[\s·•:：,，.。!！?？\-—_()（）[\]【】《》<>]/g,'');
+  const normalizeText=s=>String(s||'').toLowerCase().replace(/[\s·•:：,，.。!！?？\-—_()（）\[\]【】《》<>]/g,'');
   const safeDate=ts=>{
     const num=Number(ts);if(!num)return'';
     const d=new Date(num<1e12?num*1000:num);
@@ -69,12 +69,17 @@
     })}finally{db.close()}
   }
   async function countFailures(){
+    if(knownFailureIds)return knownFailureIds.size;
     const db=await failureDb();
     try{return await new Promise((resolve,reject)=>{
       const req=db.transaction(FAILURE_STORE).objectStore(FAILURE_STORE).count();
       req.onsuccess=()=>resolve(req.result||0);
       req.onerror=()=>reject(req.error);
     })}finally{db.close()}
+  }
+  async function ensureFailureCache(){
+    if(knownFailureIds)return knownFailureIds;
+    const rows=await listFailures();knownFailureIds=new Set(rows.map(x=>x.id));return knownFailureIds;
   }
   async function putFailure(row,error,extra={}){
     if(!row?.id)return;
@@ -89,16 +94,19 @@
       });
       await done;
     }finally{db.close()}
+    (await ensureFailureCache()).add(row.id);
     await updateFailureCount();
   }
   async function clearFailure(id){
     if(!id)return;
+    const ids=await ensureFailureCache();
+    if(!ids.has(id))return;
     const db=await failureDb();
     try{
       const tx=db.transaction(FAILURE_STORE,'readwrite'),done=txDone(tx,'失败项无法清除');
       tx.objectStore(FAILURE_STORE).delete(id);await done;
     }finally{db.close()}
-    await updateFailureCount();
+    ids.delete(id);await updateFailureCount();
   }
   async function replaceFailure(row){
     const db=await failureDb();
@@ -106,10 +114,10 @@
       const tx=db.transaction(FAILURE_STORE,'readwrite'),done=txDone(tx,'失败断点无法更新');
       tx.objectStore(FAILURE_STORE).put({...row,updatedAt:Date.now()});await done;
     }finally{db.close()}
-    await updateFailureCount();
+    (await ensureFailureCache()).add(row.id);await updateFailureCount();
   }
   async function updateFailureCount(){
-    const count=await countFailures().catch(()=>n(state.weRead?.failedDetailCount));
+    const count=knownFailureIds?knownFailureIds.size:await countFailures().catch(()=>n(state.weRead?.failedDetailCount));
     state.weRead=state.weRead&&typeof state.weRead==='object'?state.weRead:{};
     state.weRead.failedDetailCount=count;
     try{save()}catch{}
@@ -133,13 +141,15 @@
   }
   async function inspectResponse(response,row){
     if(!row)return;
-    let failed=!response.ok,message=response.statusText||`HTTP ${response.status}`;
+    let failed=!response.ok,message=response.statusText||`HTTP ${response.status}`,parsed=false;
     try{
-      const data=await response.clone().json();
+      const data=await response.clone().json();parsed=true;
       if(data?.errcode&&data.errcode!==0){failed=true;message=data.errmsg||data.message||message}
-    }catch{}
+    }catch(error){
+      if(response.ok){failed=true;message='微信读书返回的数据无法解析'}
+    }
     if(failed)await putFailure(row,message,row.kind==='reviews'?{synckey:row.synckey||0}:{});
-    else await clearFailure(row.id);
+    else if(parsed)await clearFailure(row.id);
   }
 
   window.fetch=async function(input,init){
@@ -237,15 +247,17 @@
     let synckey=row.synckey||0;
     const seen=new Set();
     for(let page=0;page<REVIEW_PAGE_LIMIT;page++){
+      row.synckey=synckey;
       const data=await directCall('/review/list/mine',{bookid:row.bookId,synckey,count:20});
       await saveHighlights(reviewRows(row,data));
       if(!data?.hasMore){await clearFailure(row.id);return true}
       const next=data.synckey;
       if(!next||String(next)===String(synckey)||seen.has(String(next))){await clearFailure(row.id);return true}
-      seen.add(String(next));synckey=next;
+      seen.add(String(next));synckey=next;row.synckey=synckey;
       await replaceFailure({...row,synckey,attempts:n(row.attempts),lastError:row.lastError||''});
       await new Promise(resolve=>setTimeout(resolve,0));
     }
+    row.synckey=synckey;
     await replaceFailure({...row,synckey,attempts:n(row.attempts),lastError:'评论页数较多，保留下一页断点'});
     return false;
   }
@@ -304,7 +316,7 @@
     };
   }
 
-  document.addEventListener('click',event=>{
+  window.addEventListener('click',event=>{
     if(!retrying)return;
     const id=event.target?.closest?.('button')?.id;
     if(['wereadConnectBtn','wereadSyncBtn','wereadContinueBtn','wereadRestartBtn'].includes(id)){
@@ -313,7 +325,7 @@
     }
   },true);
 
-  updateFailureCount();
+  ensureFailureCache().then(updateFailureCount).catch(()=>updateFailureCount());
   window.yuejiP0FailureCount=()=>countFailures();
   window.yuejiP0FailureList=()=>listFailures();
 })();
