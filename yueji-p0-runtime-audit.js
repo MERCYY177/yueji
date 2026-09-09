@@ -3,9 +3,9 @@
   if(window.__yuejiP0RuntimeAuditInstalled)return;
   window.__yuejiP0RuntimeAuditInstalled=true;
 
-  const REQUIRED_FLAGS=['__yuejiP0SyncGuardV2Installed','__yuejiP0FailuresInstalled','__yuejiP0InflightInstalled','__yuejiP0ChainTestInstalled'];
-  const REQUIRED_FUNCTIONS=['yuejiP0ValidateResumeQueue','yuejiP0ResumeSync','yuejiP0FailureCount','yuejiP0InflightInfo','yuejiP0RunChainStress'];
-  const SCRIPT_ORDER=['yueji-p0-sync-guard-v2.js','yueji-p0-resume.js','yueji-p0-failures.js','yueji-p0-inflight.js','yueji-p0-chain-test.js','yueji-p0-runtime-audit.js'];
+  const REQUIRED_FLAGS=['__yuejiP0SyncGuardV2Installed','__yuejiP0ProgressFirstInstalled','__yuejiP0FailuresInstalled','__yuejiP0InflightInstalled','__yuejiP0ChainTestInstalled'];
+  const REQUIRED_FUNCTIONS=['yuejiP0ValidateResumeQueue','yuejiP0ResumeSync','yuejiP0ProgressFirst','yuejiP0FailureCount','yuejiP0InflightInfo','yuejiP0RunChainStress'];
+  const SCRIPT_ORDER=['yueji-p0-sync-guard-v2.js','yueji-p0-resume.js','yueji-p0-progress-first.js','yueji-p0-failures.js','yueji-p0-inflight.js','yueji-p0-chain-test.js','yueji-p0-runtime-audit.js'];
   let report=null;
 
   function scriptMatches(name){return[...document.scripts].filter(s=>String(s.src||'').includes(name))}
@@ -28,6 +28,18 @@
       if(positions[i-1].index>=0&&positions[i].index>=0&&positions[i].index<positions[i-1].index){errors.push(`P0 加载顺序异常：${positions[i].name} 早于 ${positions[i-1].name}`);break}
     }
 
+    const expectedVersion=String(window.__yuejiP0AssetVersion||'');
+    if(!expectedVersion)errors.push('P0 资源版本标记缺失。');
+    else{
+      const mismatched=[];
+      for(const name of SCRIPT_ORDER){
+        const script=scriptMatches(name)[0];if(!script)continue;
+        let version='';try{version=new URL(script.src,location.href).searchParams.get('v')||''}catch{}
+        if(version!==expectedVersion)mismatched.push(`${name}=${version||'无版本'}`);
+      }
+      if(mismatched.length)errors.push(`P0 资源版本不一致：${mismatched.join('、')}`);
+    }
+
     const buttonIds=['wereadConnectBtn','wereadSyncBtn','wereadContinueBtn','wereadRestartBtn','wereadStopBtn'];
     const duplicateIds=buttonIds.filter(id=>document.querySelectorAll(`#${id}`).length>1);
     if(duplicateIds.length)errors.push(`同步控件重复：${duplicateIds.join('、')}`);
@@ -38,8 +50,9 @@
     state.weRead.p0RuntimeHealthy=healthy;
     state.weRead.p0RuntimeAuditAt=Date.now();
     state.weRead.p0RuntimeErrors=errors.slice(0,8);
+    state.weRead.p0AssetVersion=expectedVersion;
     try{save()}catch{}
-    report={healthy,errors,warnings,checkedAt:Date.now(),scripts:positions};
+    report={healthy,errors,warnings,checkedAt:Date.now(),scripts:positions,assetVersion:expectedVersion};
     if(!healthy){state.weRead.autoRetryBlocked=true;try{save()}catch{};status(`P0 同步保护没有完整加载：${errors[0]} 已暂停自动同步和继续同步，现有阅读数据没有删除。`)}
     return report;
   }
