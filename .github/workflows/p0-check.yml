@@ -1,0 +1,40 @@
+name: P0 branch checks
+
+on:
+  push:
+    branches: ["p0-sync-resume-queues"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+
+      - name: Use Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Syntax check all JavaScript
+        shell: bash
+        run: |
+          set -euo pipefail
+          count=0
+          while IFS= read -r -d '' file; do
+            echo "node --check $file"
+            node --check "$file"
+            count=$((count+1))
+          done < <(find . -type f \( -name '*.js' -o -name '*.mjs' \) -not -path './node_modules/*' -print0 | sort -z)
+          echo "Checked $count JavaScript files."
+
+      - name: Install mock IndexedDB
+        run: npm install --no-save --ignore-scripts fake-indexeddb@6
+
+      - name: Run P0 mock integration smoke test
+        run: node tests/p0-smoke.mjs
