@@ -4,14 +4,15 @@
   const EXT_KEY = 'yueji-weread-key';
   const SYNC_GUARD_KEY = 'yueji-weread-sync-guard-v1';
   const SYNC_DB = 'yueji-weread-sync-v1';
-  const SYNC_STORE = 'snapshots';
+  const SYNC_STORE = 'records';
+  const SYNC_DIAGNOSTIC_KEY = 'yueji-weread-last-stage-v1';
   const GATEWAY = '/.netlify/functions/weread-gateway';
   const SKILL_VERSION = '1.0.4';
   const AUTO_SYNC_MS = 6 * 60 * 60 * 1000;
   const REQUEST_TIMEOUT_MS = 18000;
   const SYNC_DEADLINE_MS = 60000;
   const PROGRESS_BATCH_SIZE = 1;
-  const API_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
+  const API_RESPONSE_MAX_BYTES = 512 * 1024;
   const JSON_WORKER_THRESHOLD = 256 * 1024;
   const WR_SESSION_PREFIX = 'weread-day:';
   const WR_HIGHLIGHT_MARKER = '__YUEJI_WEREAD__';
@@ -29,9 +30,10 @@
 
   async function parseJsonText(text) {
     const raw = String(text ?? '');
-    if (raw.length < JSON_WORKER_THRESHOLD || typeof Worker === 'undefined' || typeof Blob === 'undefined' || typeof URL?.createObjectURL !== 'function') {
+    if (raw.length < JSON_WORKER_THRESHOLD) {
       return JSON.parse(raw);
     }
+    if (typeof Worker === 'undefined' || typeof Blob === 'undefined' || typeof URL?.createObjectURL !== 'function') throw new Error('后台解析不可用，为保护页面已停止读取大数据');
     let worker;
     let workerUrl;
     let timeout;
@@ -47,8 +49,7 @@
         worker.postMessage(raw);
       });
     } catch (error) {
-      if (/JSON|Unexpected|position|token|超时/i.test(String(error?.message || error))) throw error;
-      return JSON.parse(raw);
+      throw error;
     } finally {
       clearTimeout(timeout);
       worker?.terminate();
@@ -116,13 +117,22 @@
     catch (error) { console.warn('Yueji local save skipped', error); return false; }
   }
 
-  function syncDb(){return new Promise((resolve,reject)=>{const req=indexedDB.open(SYNC_DB,1);req.onupgradeneeded=()=>{if(!req.result.objectStoreNames.contains(SYNC_STORE))req.result.createObjectStore(SYNC_STORE,{keyPath:'id'})};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);req.onblocked=()=>reject(new Error('微信同步暂存区被其他页面占用'))})}
+  function syncDb(){return new Promise((resolve,reject)=>{const req=indexedDB.open(SYNC_DB,2);req.onupgradeneeded=()=>{const db=req.result;if(db.objectStoreNames.contains('snapshots'))db.deleteObjectStore('snapshots');if(!db.objectStoreNames.contains(SYNC_STORE))db.createObjectStore(SYNC_STORE,{keyPath:'id'})};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);req.onblocked=()=>reject(new Error('微信同步数据库被其他页面占用'))})}
   function syncDbRequest(work,mode='readonly'){return syncDb().then(db=>new Promise((resolve,reject)=>{const tx=db.transaction(SYNC_STORE,mode),store=tx.objectStore(SYNC_STORE),req=work(store);let result;req.onsuccess=()=>{result=req.result};req.onerror=()=>reject(req.error);tx.oncomplete=()=>{db.close();resolve(result)};tx.onerror=()=>{db.close();reject(tx.error||new Error('微信同步暂存失败'))};tx.onabort=()=>{db.close();reject(tx.error||new Error('微信同步暂存失败'))}}))}
-  async function stageSyncSnapshot(){const row={id:'pending',savedAt:Date.now(),weRead:state.weRead,books:state.books.filter(b=>b.sources?.includes('weread')),sessions:state.sessions.filter(s=>s.source==='weread')};try{await syncDbRequest(store=>store.put(row),'readwrite');return true}catch(error){console.warn('微信同步安全暂存不可用，将退回主档案保存',error);return false}}
-  async function clearSyncSnapshot(){try{await syncDbRequest(store=>store.delete('pending'),'readwrite')}catch(error){console.warn('微信同步暂存清理失败',error)}}
-  async function commitSyncCheckpoint(options={}){const staged=await stageSyncSnapshot();await saveCheckpoint(options);if(staged)await clearSyncSnapshot()}
+  function compactWeReadMeta(source=state){const {daily,shelfBooks,...meta}=source.weRead||{};return{...meta,dailyCount:Object.keys(daily||{}).length,shelfTotal:n(source.weRead?.shelfTotal)}}
+  function compactLocalWeReadMeta(source=state){const {daily,shelfBooks,notebooks,reviewCursors,...meta}=source.weRead||{};return{...meta,dailyCount:Object.keys(daily||{}).length,shelfTotal:n(source.weRead?.shelfTotal),notebooksTotal:n(source.weRead?.notebooksTotal)}}
+  function diagnosticStage(stage,detail={}){try{localStorage.setItem(SYNC_DIAGNOSTIC_KEY,JSON.stringify({stage,detail,at:Date.now()}))}catch{}}
+  async function putSyncRows(rows){if(!rows.length)return;const db=await syncDb();try{for(let start=0;start<rows.length;start+=50){const tx=db.transaction(SYNC_STORE,'readwrite'),done=new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)}),store=tx.objectStore(SYNC_STORE);rows.slice(start,start+50).forEach(row=>store.put(row));await done;await yieldToBrowser()}}finally{db.close()}}
+  async function persistSyncIncrement({books=[],sessions=[],includeShelf=false}={}){diagnosticStage('indexeddb-write',{books:books.length,sessions:sessions.length});const rows=[{id:'meta',kind:'meta',savedAt:Date.now(),weRead:compactWeReadMeta()}];for(const b of books){const id=String(b.weReadBookId||'');if(id)rows.push({id:`book:${id}`,kind:'book',value:b})}for(const s of sessions){if(s.id)rows.push({id:`session:${s.id}`,kind:'session',value:s})}if(includeShelf)rows.push({id:'shelf',kind:'shelf',value:(state.weRead.shelfBooks||[]).map(compactShelfBook)});await putSyncRows(rows);diagnosticStage('indexeddb-complete',{rows:rows.length})}
+  async function replaceSyncArchive(source=state){const db=await syncDb();try{const tx=db.transaction(SYNC_STORE,'readwrite'),done=new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)});tx.objectStore(SYNC_STORE).clear();await done}finally{db.close()}const books=(source.books||[]).filter(b=>b.sources?.includes('weread')),sessions=(source.sessions||[]).filter(s=>s.source==='weread');const original=state;try{state=source;await persistSyncIncrement({books,sessions,includeShelf:true})}finally{state=original}}
+  async function stageSyncSnapshot(){await persistSyncIncrement();return true}
+  async function clearSyncSnapshot(){}
+  async function commitSyncCheckpoint(options={}){if(options.highlightRows?.length)await persistHighlightRowsOnly(options.highlightRows);await persistSyncIncrement(options);diagnosticStage('step-complete',{phase:state.weRead.syncPhase})}
   async function persistHighlightRowsOnly(rows){if(!rows?.length)return;if(window.yuejiHighlightsReady)await window.yuejiHighlightsReady;if(window.yuejiHighlightsDbReady?.())await window.yuejiPutHighlights(rows);else state.highlights.push(...rows.filter(x=>!state.highlights.some(y=>y.id===x.id)))}
-  async function recoverSyncSnapshot(){let row;try{row=await syncDbRequest(store=>store.get('pending'))}catch(error){console.warn('微信同步暂存读取失败',error);return false}if(!row)return false;state.weRead={...state.weRead,...(row.weRead||{}),syncState:'paused',interruptedAt:row.savedAt||Date.now()};const byId=new Map(state.books.filter(b=>b.weReadBookId).map(b=>[String(b.weReadBookId),b])),byKey=new Map(state.books.map(b=>[String(b.key),b]));for(const incoming of row.books||[]){const found=incoming.weReadBookId?byId.get(String(incoming.weReadBookId)):byKey.get(String(incoming.key));if(found)Object.assign(found,incoming);else state.books.push(incoming)}state.sessions=state.sessions.filter(s=>s.source!=='weread').concat(row.sessions||[]);rebuildBookIndexes();try{await saveCheckpoint();await clearSyncSnapshot()}catch(error){console.warn('微信同步暂存尚未提交，将在下次启动继续恢复',error)}return true}
+  async function recoverSyncSnapshot(){let rows=[];try{rows=await syncDbRequest(store=>store.getAll())||[]}catch(error){console.warn('微信同步数据库读取失败',error);return false}if(!rows.length)return false;const meta=rows.find(x=>x.id==='meta'),shelf=rows.find(x=>x.id==='shelf');if(meta?.weRead)state.weRead={...state.weRead,...meta.weRead,syncState:meta.weRead.syncState==='running'?'paused':meta.weRead.syncState};if(shelf?.value)state.weRead.shelfBooks=shelf.value;const byId=new Map(state.books.filter(b=>b.weReadBookId).map(b=>[String(b.weReadBookId),b])),byKey=new Map(state.books.map(b=>[String(b.key),b]));for(const row of rows){if(row.kind!=='book'||!row.value)continue;const incoming=row.value,found=incoming.weReadBookId?byId.get(String(incoming.weReadBookId)):byKey.get(String(incoming.key));if(found)Object.assign(found,incoming);else state.books.push(incoming)}const savedSessions=rows.filter(x=>x.kind==='session'&&x.value).map(x=>x.value),sessionIds=new Set(savedSessions.map(x=>x.id));state.sessions=state.sessions.filter(s=>s.source!=='weread'||!sessionIds.has(s.id)).concat(savedSessions);state.weRead.daily={};savedSessions.forEach(s=>{if(s.date)state.weRead.daily[s.date]=n(s.seconds)||n(s.minutes)*60});rebuildBookIndexes();return true}
+
+  window.yuejiCompactExternalState=value=>{const books=(value.books||[]).flatMap(b=>{const sources=(b.sources||[]).filter(x=>x!=='weread');if(!sources.length)return[];const copy={...b,sources};delete copy.weReadBookId;delete copy.weReadSeconds;delete copy.weReadLastRead;delete copy.weReadCover;delete copy.readUpdateTime;delete copy.finishReading;return[copy]}),weRead=value.weRead?compactLocalWeReadMeta({weRead:value.weRead}):undefined;return{...value,books,sessions:(value.sessions||[]).filter(s=>s.source!=='weread'),weRead}}
+  window.yuejiPersistExternalState=replaceSyncArchive;
 
   function ensureStateShape() {
     state.weRead = state.weRead && typeof state.weRead === 'object' ? state.weRead : {};
@@ -303,7 +313,7 @@
 
   function syncStateLabel(){const key=localStorage.getItem(EXT_KEY);if(!key)return'未连接';return({running:'同步中',paused:'已暂停',error:'部分失败',complete:'全部完成','base-complete':'基础数据完成',idle:'等待同步'})[state.weRead.syncState]||'等待同步'}
   function syncPhaseLabel(){return({verify:'验证连接',shelf:'待读书架',stats:'待读月份',progress:'待读进度',notebooks:'待读笔记目录',bookmarks:'待读划线',reviews:'待读想法',complete:'全部完成'})[inferSyncPhase()]||'等待同步'}
-  function updateWeReadProgressPanel(){const panel=document.getElementById('wereadProgressPanel');if(!panel)return;const progressTotal=n(state.weRead.progressTotal),notesTotal=n(state.weRead.notebooksTotal),progressDone=state.weRead.progressDone?progressTotal:n(state.weRead.progressCursor),notesDone=state.weRead.notesDone?notesTotal:n(state.weRead.notesCursor),last=state.weRead.lastSync?new Date(state.weRead.lastSync).toLocaleString('zh-CN',{hour12:false}):'尚未完成',monthProgress=!state.weRead.statsDone&&state.weRead.statsSyncYear?`${Math.min(n(state.weRead.statsMonthCursor),12)} 月已保存`:`${n(state.weRead.statsDays)} 天`;panel.innerHTML=`<div class="wr-progress-head"><b>${esc(syncStateLabel())} · ${esc(syncPhaseLabel())}</b><span>最后更新：${esc(last)}</span></div><div class="wr-progress-grid"><div class="wr-progress-item"><span>书架</span><strong>${n(state.weRead.shelfTotal)} 本</strong></div><div class="wr-progress-item"><span>阅读统计</span><strong>${esc(monthProgress)}</strong></div><div class="wr-progress-item"><span>阅读进度</span><strong>${progressDone} / ${progressTotal || '待读取'}</strong></div><div class="wr-progress-item"><span>书摘书目</span><strong>${notesDone} / ${notesTotal || '待读取'}</strong></div></div>`}
+  function updateWeReadProgressPanel(){const panel=document.getElementById('wereadProgressPanel');if(!panel)return;const progressTotal=n(state.weRead.progressTotal),notesTotal=n(state.weRead.notebooksTotal),progressDone=state.weRead.progressDone?progressTotal:n(state.weRead.progressCursor),notesDone=state.weRead.notesDone?notesTotal:n(state.weRead.notesCursor),last=state.weRead.lastSync?new Date(state.weRead.lastSync).toLocaleString('zh-CN',{hour12:false}):'尚未完成',monthProgress=!state.weRead.statsDone&&state.weRead.statsSyncYear?`${Math.min(n(state.weRead.statsMonthCursor),12)} 月已保存`:`${n(state.weRead.statsDays)} 天`;let diagnostic='';try{const row=JSON.parse(localStorage.getItem(SYNC_DIAGNOSTIC_KEY)||'null');if(row?.stage&&!String(row.stage).endsWith('complete'))diagnostic=`<small class="wr-diagnostic">上次中断位置：${esc(row.stage)} · ${esc(new Date(row.at).toLocaleString('zh-CN',{hour12:false}))}</small>`}catch{}panel.innerHTML=`<div class="wr-progress-head"><b>${esc(syncStateLabel())} · ${esc(syncPhaseLabel())}</b><span>最后更新：${esc(last)}</span></div><div class="wr-progress-grid"><div class="wr-progress-item"><span>书架</span><strong>${n(state.weRead.shelfTotal)} 本</strong></div><div class="wr-progress-item"><span>阅读统计</span><strong>${esc(monthProgress)}</strong></div><div class="wr-progress-item"><span>阅读进度</span><strong>${progressDone} / ${progressTotal || '待读取'}</strong></div><div class="wr-progress-item"><span>书摘书目</span><strong>${notesDone} / ${notesTotal || '待读取'}</strong></div></div>${diagnostic}`}
 
   function updateWeReadStatus(extra = '') {
     const el = document.getElementById('wereadStatus');
@@ -363,7 +373,7 @@
         signal: controller.signal
       });
       let data;
-      try {const text=await readApiResponseText(res,ctx);await yieldToBrowser();data=JSON.parse(text)} catch(error){if(/^SYNC_|微信读书单次返回数据过大/.test(String(error?.message||'')))throw error;throw new Error(`微信读书返回了无法解析的响应（${res.status}）`);}
+      try {diagnosticStage('response-read',{apiName});const text=await readApiResponseText(res,ctx);diagnosticStage('response-parse',{apiName,bytes:new TextEncoder().encode(text).byteLength});await yieldToBrowser();data=await parseJsonText(text);diagnosticStage('response-parsed',{apiName})} catch(error){if(/^SYNC_|微信读书单次返回数据过大/.test(String(error?.message||'')))throw error;throw new Error(`微信读书返回了无法解析的响应（${res.status}）`);}
       if (!res.ok || data?.errcode && data.errcode !== 0) throw new Error(data?.errmsg || data?.message || `微信读书接口错误（${res.status}）`);
       if (ctx) assertSyncActive(ctx);
       return data?.data && typeof data.data === 'object' ? data.data : data;
@@ -437,7 +447,7 @@
   }
 
   function replaceWeReadMonth(year,month,daily){const prefix=`${year}-${pad(month)}`,next={...(state.weRead.daily||{})};Object.keys(next).forEach(date=>{if(date.startsWith(prefix))delete next[date]});Object.assign(next,daily);state.weRead.daily=next;state.sessions=state.sessions.filter(s=>!(s.source==='weread'&&s.aggregate===true&&String(s.date||'').startsWith(prefix)));Object.entries(daily).forEach(([date,seconds])=>{const sec=n(seconds);if(sec>0)state.sessions.push({id:`${WR_SESSION_PREFIX}${date}`,date,bookKey:'',title:'微信读书',minutes:Math.round(sec/60),seconds:sec,words:0,source:'weread',aggregate:true,precision:'daily-total'})})}
-  async function syncCurrentYearDaily(ctx=activeSync){const now=new Date(),year=now.getFullYear(),lastMonth=now.getMonth()+1;if(state.weRead.statsSyncYear!==year){state.weRead.statsSyncYear=year;state.weRead.statsMonthCursor=0;state.weRead.statsDone=false}else if(state.weRead.statsDone){state.weRead.statsMonthCursor=Math.max(0,lastMonth-1);state.weRead.statsDone=false}const completed=Math.max(0,Math.min(n(state.weRead.statsMonthCursor),lastMonth));if(completed>=lastMonth){state.weRead.statsDone=true;state.weRead.statsMonthCursor=0;return{year,days:n(state.weRead.statsDays),done:true,month:lastMonth,lastMonth}}const month=completed+1;assertSyncActive(ctx);setWeReadStatus(`正在同步 ${year} 年 ${month} 月阅读时间（${month}/${lastMonth}）。本次只处理这一个月……`);const baseTime=Math.floor(new Date(year,month-1,15).getTime()/1000),result=await wereadCall('/readdata/detail',{mode:'monthly',baseTime},ctx),daily=parseReadTimesObject(result.dailyReadTimes||result.readTimes);replaceWeReadMonth(year,month,daily);state.weRead.statsMonthCursor=month;state.weRead.statsDays=Object.keys(state.weRead.daily).length;state.weRead.statsDone=month>=lastMonth;if(state.weRead.statsDone)state.weRead.statsMonthCursor=0;return{year,days:state.weRead.statsDays,done:state.weRead.statsDone,month,lastMonth}}
+  async function syncCurrentYearDaily(ctx=activeSync){const now=new Date(),year=now.getFullYear(),lastMonth=now.getMonth()+1;if(state.weRead.statsSyncYear!==year){state.weRead.statsSyncYear=year;state.weRead.statsMonthCursor=0;state.weRead.statsDone=false}else if(state.weRead.statsDone){state.weRead.statsMonthCursor=Math.max(0,lastMonth-1);state.weRead.statsDone=false}const completed=Math.max(0,Math.min(n(state.weRead.statsMonthCursor),lastMonth));if(completed>=lastMonth){state.weRead.statsDone=true;state.weRead.statsMonthCursor=0;return{year,days:n(state.weRead.statsDays),done:true,month:lastMonth,lastMonth,sessions:[]}}const month=completed+1;assertSyncActive(ctx);setWeReadStatus(`正在同步 ${year} 年 ${month} 月阅读时间（${month}/${lastMonth}）。本次只处理这一个月……`);const baseTime=Math.floor(new Date(year,month-1,15).getTime()/1000),result=await wereadCall('/readdata/detail',{mode:'monthly',baseTime},ctx),daily=parseReadTimesObject(result.dailyReadTimes||result.readTimes);diagnosticStage('merge-month',{year,month,days:Object.keys(daily).length});replaceWeReadMonth(year,month,daily);state.weRead.statsMonthCursor=month;state.weRead.statsDays=Object.keys(state.weRead.daily).length;state.weRead.statsDone=month>=lastMonth;if(state.weRead.statsDone)state.weRead.statsMonthCursor=0;return{year,days:state.weRead.statsDays,done:state.weRead.statsDone,month,lastMonth,sessions:state.sessions.filter(s=>s.source==='weread'&&String(s.date||'').startsWith(`${year}-${pad(month)}`))}}
 
   async function syncShelfBase(ctx) {
     setWeReadStatus('正在读取微信读书书架……');
@@ -488,18 +498,18 @@
     try{await ensureSyncCapacity()}catch(error){return setWeReadStatus('浏览器可用储存空间不足，已在请求微信数据之前停止。请先导出备份并清理空间。',true)}
     const ctx=beginSync(mode); if(!ctx)return setWeReadStatus('已有同步任务正在进行，可以先点“暂停同步”。');
     try{
-      const phase=inferSyncPhase(),books=state.weRead.shelfBooks||[];let extra='';
+      const phase=inferSyncPhase(),books=state.weRead.shelfBooks||[];let extra='',changedBooks=[],changedSessions=[],includeShelf=false;diagnosticStage('step-start',{phase});
       if(phase==='verify'){setWeReadStatus('正在验证微信读书连接。本次只有一个请求……');await wereadCall('/_list',{},ctx);state.weRead.syncPhase='shelf';extra='连接验证成功。再次点击“继续未完成同步”读取书架。'}
-      else if(phase==='shelf'){const shelfBooks=await syncShelfBase(ctx);state.weRead.syncPhase='stats';state.weRead.progressDone=false;state.weRead.progressCursor=0;state.weRead.notesDone=false;state.weRead.notesCursor=0;state.weRead.notebookCursor='';state.weRead.notebooks=[];state.weRead.reviewCursors={};extra=`已保存 ${shelfBooks.length} 本书架资料。再次点击读取一个月的阅读时间。`}
-      else if(phase==='stats'){const stats=await syncCurrentYearDaily(ctx);state.weRead.syncPhase=stats.done?'progress':'stats';extra=stats.done?`${stats.year} 年阅读时间已经补齐。再次点击读取一本书的进度。`:`已保存 ${stats.year} 年 ${stats.month} 月数据。再次点击读取下一个月。`}
-      else if(phase==='progress'){const progress=await syncProgressBatch(books,ctx);state.weRead.syncPhase=progress.done?'notebooks':'progress';extra=progress.done?`阅读进度 ${progress.completed}/${progress.total} 已完成。再次点击读取笔记目录第一页。`:`已保存阅读进度 ${progress.completed}/${progress.total}。再次点击读取下一本。`}
+      else if(phase==='shelf'){const shelfBooks=await syncShelfBase(ctx);changedBooks=state.books.filter(b=>b.sources?.includes('weread'));includeShelf=true;state.weRead.syncPhase='stats';state.weRead.progressDone=false;state.weRead.progressCursor=0;state.weRead.notesDone=false;state.weRead.notesCursor=0;state.weRead.notebookCursor='';state.weRead.notebooks=[];state.weRead.reviewCursors={};extra=`已保存 ${shelfBooks.length} 本书架资料。再次点击读取一个月的阅读时间。`}
+      else if(phase==='stats'){const stats=await syncCurrentYearDaily(ctx);changedSessions=stats.sessions||[];state.weRead.syncPhase=stats.done?'progress':'stats';extra=stats.done?`${stats.year} 年阅读时间已经补齐。再次点击读取一本书的进度。`:`已保存 ${stats.year} 年 ${stats.month} 月数据。再次点击读取下一个月。`}
+      else if(phase==='progress'){const before=n(state.weRead.progressCursor),progress=await syncProgressBatch(books,ctx),raw=books[Math.min(before,Math.max(0,books.length-1))];if(raw?.bookId){const changed=bookByWeReadId.get(String(raw.bookId));if(changed)changedBooks=[changed]}state.weRead.syncPhase=progress.done?'notebooks':'progress';extra=progress.done?`阅读进度 ${progress.completed}/${progress.total} 已完成。再次点击读取笔记目录第一页。`:`已保存阅读进度 ${progress.completed}/${progress.total}。再次点击读取下一本。`}
       else if(phase==='notebooks'){const result=await syncNotebookPage(ctx);extra=result.done?`笔记目录读取完成，共 ${result.total} 本。再次点击读取第一本书的划线。`:`已保存 ${result.total} 本笔记目录。再次点击读取下一页。`}
       else if(phase==='bookmarks'){const result=await syncBookmarkStep(ctx);extra=result.done?'书摘同步已经完成。':`本书划线已保存 ${result.count||0} 条。再次点击读取这本书的想法。`}
       else if(phase==='reviews'){const result=await syncReviewStep(ctx);extra=result.done?'全部书摘已经同步完成。':`本页想法已保存 ${result.count||0} 条。再次点击继续当前书或下一本书。`}
       else{state.weRead.syncPhase='complete';state.weRead.syncState='complete';extra='微信读书数据已经全部同步完成。';}
       state.weRead.lastSync=Date.now();state.weRead.autoRetryBlocked=false;state.weRead.syncState=state.weRead.syncPhase==='complete'?'complete':'paused';
       state.weRead.skillVersion=SKILL_VERSION;
-      state.source=state.books.some(b=>b.sources?.includes('moon'))?'多源阅读档案':'微信读书';await commitSyncCheckpoint();
+      state.source=state.books.some(b=>b.sources?.includes('moon'))?'多源阅读档案':'微信读书';await commitSyncCheckpoint({books:changedBooks,sessions:changedSessions,includeShelf});
       if(manual)await window.yuejiRequestPersistentStorage?.();updateSourcePill();updateWeReadStatus(extra);toast('本次同步步骤已保存');
     }catch(e){
       const msg=String(e?.message||e); if(!/^SYNC_/.test(msg))console.error(e);
@@ -510,7 +520,7 @@
       else if(msg==='SYNC_BATCH_LIMIT')setWeReadStatus('这本书的书摘较多，本批已安全暂停并记住位置。请再次点“继续同步”。');
       else if(msg==='STORAGE_LIMIT')setWeReadStatus('浏览器本地储存空间不足，已停止同步。此前成功保存的数据仍然保留；请先导出备份，之后再考虑迁移到更大容量的储存。',true);
       else{const cors=/failed to fetch|networkerror|load failed/i.test(msg);state.weRead.autoRetryBlocked=true;setWeReadStatus(cors?'连接失败：微信读书中转服务没有响应。系统不会自动反复重试，已有数据也不会删除。':`同步未完成：${msg}。系统不会自动反复重试，已完成的数据会保留。`,true);if(manual)toast('微信读书同步未完成')}
-      if(saveBestEffort())await clearSyncSnapshot();
+      try{await persistSyncIncrement()}catch(error){console.warn('同步错误状态未能写入数据库',error)}
       updateSourcePill();updateWeReadProgressPanel();
     }finally{try{localStorage.removeItem(SYNC_GUARD_KEY)}catch{}if(activeSync===ctx)activeSync=null;window.__yuejiWeReadSyncing=false;syncButtonState(false)}
   }
@@ -586,7 +596,7 @@
 
   function autoSyncIfNeeded(){const key=localStorage.getItem(EXT_KEY);if(!key||state.weRead.autoRetryBlocked||document.visibilityState!=='visible'||!navigator.onLine)return;if(Date.now()-n(state.weRead.lastSync)<AUTO_SYNC_MS)return;setWeReadStatus('微信读书数据可以更新。为避免手机自动卡顿，请在方便时点击“同步基础数据”。')}
 
-  window.__yuejiWeReadDiagnostics={inferSyncPhase,syncWeRead,stopActiveSync,replaceWeReadMonth,ensureStateShape,stageSyncSnapshot,recoverSyncSnapshot};
-  async function init(){ensureStateShape();const recovered=await recoverSyncSnapshot();injectStyles();injectSettings();injectEvolution();installHooks();updateSourcePill();patchNoteSources();if(recovered){renderAllSafe();updateWeReadStatus('检测到上次未提交完成的同步数据，已从安全暂存区恢复。')}const schedule=()=>autoSyncIfNeeded();if(globalThis.requestIdleCallback)requestIdleCallback(schedule,{timeout:15000});else setTimeout(schedule,10000)}
+  window.__yuejiWeReadDiagnostics={inferSyncPhase,syncWeRead,stopActiveSync,replaceWeReadMonth,ensureStateShape,stageSyncSnapshot,persistSyncIncrement,recoverSyncSnapshot};
+  async function init(){ensureStateShape();let recovered=await recoverSyncSnapshot();if(!recovered&&(state.books.some(b=>b.sources?.includes('weread'))||state.sessions.some(s=>s.source==='weread'))){diagnosticStage('legacy-migration-start');try{await replaceSyncArchive(state);diagnosticStage('legacy-migration-complete');recovered=true}catch(error){console.warn('旧微信数据迁移失败，原数据仍保留',error)}}injectStyles();injectSettings();injectEvolution();installHooks();updateSourcePill();patchNoteSources();if(recovered){renderAllSafe();updateWeReadStatus('微信读书数据已从独立数据库恢复。')}const schedule=()=>autoSyncIfNeeded();if(globalThis.requestIdleCallback)requestIdleCallback(schedule,{timeout:15000});else setTimeout(schedule,10000)}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();

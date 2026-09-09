@@ -1,6 +1,7 @@
 const UPSTREAM = "https://i.weread.qq.com/api/agent/gateway";
 const UPSTREAM_TIMEOUT_MS = 15000;
 const UPSTREAM_MAX_BYTES = 2 * 1024 * 1024;
+const CLIENT_MAX_BYTES = 512 * 1024;
 
 const ALLOWED_APIS = new Set([
   "/_list",
@@ -52,6 +53,23 @@ async function readBoundedText(response) {
   }
 }
 
+const pick = (value, keys) => Object.fromEntries(keys.filter(key => value?.[key] !== undefined).map(key => [key, value[key]]));
+const compactBook = book => pick(book || {}, ["bookId","title","name","author","authorName","category","cover","isbn","finishReading","readUpdateTime"]);
+function compactPayload(apiName, payload) {
+  if (!payload || typeof payload !== "object" || payload.errcode && payload.errcode !== 0) return payload;
+  const wrapped = payload.data && typeof payload.data === "object";
+  const source = wrapped ? payload.data : payload;
+  let data;
+  if (apiName === "/shelf/sync") data = { books:(Array.isArray(source.books) ? source.books : []).map(compactBook) };
+  else if (apiName === "/readdata/detail") data = pick(source, ["dailyReadTimes","readTimes","registTime"]);
+  else if (apiName === "/book/getprogress") data = { book:pick(source.book || source, ["progress","isStartReading","recordReadingTime","updateTime","finishTime"]), bookId:source.bookId };
+  else if (apiName === "/user/notebooks") data = { books:(Array.isArray(source.books) ? source.books : []).map(item => ({book:compactBook(item.book || item),bookId:item.bookId,readingProgress:item.readingProgress,sort:item.sort})), hasMore:Boolean(source.hasMore) };
+  else if (apiName === "/book/bookmarklist") data = { updated:(Array.isArray(source.updated) ? source.updated : []).map(item => pick(item,["bookmarkId","markText","createTime"])) };
+  else if (apiName === "/review/list/mine") data = { reviews:(Array.isArray(source.reviews) ? source.reviews : []).map(item => ({review:pick(item.review || item,["reviewId","content","abstract","createTime"])})), synckey:source.synckey, hasMore:Boolean(source.hasMore) };
+  else data = source;
+  return wrapped ? { ...pick(payload,["errcode","errmsg","message"]), data } : data;
+}
+
 export default async (request) => {
   if (request.method !== "POST") {
     return json({ message: "只允许 POST 请求" }, 405, { allow: "POST" });
@@ -96,7 +114,12 @@ export default async (request) => {
     });
 
     const body = await readBoundedText(upstream);
-    return new Response(body, {
+    let compactBody = body;
+    try { compactBody = JSON.stringify(compactPayload(apiName, JSON.parse(body))); } catch {}
+    if (new TextEncoder().encode(compactBody).byteLength > CLIENT_MAX_BYTES) {
+      return json({ message: "微信读书整理后的单次数据仍然过大，已安全停止" }, 413);
+    }
+    return new Response(compactBody, {
       status: upstream.status,
       headers: {
         "content-type": upstream.headers.get("content-type") || "application/json; charset=utf-8",

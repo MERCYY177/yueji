@@ -7,15 +7,16 @@ const memory=new Map([['yueji-weread-key','test-skill-key-1234567890']]);
 const localStorage={getItem:key=>memory.has(key)?memory.get(key):null,setItem:(key,value)=>memory.set(key,String(value)),removeItem:key=>memory.delete(key)};
 const idbRows=new Map();let idbCreated=false;
 function idbOperation(tx,action){const req={result:undefined};setTimeout(()=>{try{req.result=action();req.onsuccess?.();setTimeout(()=>tx.oncomplete?.(),0)}catch(error){req.error=error;req.onerror?.();tx.onerror?.()}},0);return req}
-const idbDatabase={objectStoreNames:{contains:name=>idbCreated&&name==='snapshots'},createObjectStore(){idbCreated=true;return{}},transaction(){const tx={};tx.objectStore=()=>({put:row=>idbOperation(tx,()=>{idbRows.set(row.id,structuredClone(row));return row.id}),get:id=>idbOperation(tx,()=>structuredClone(idbRows.get(id))),delete:id=>idbOperation(tx,()=>idbRows.delete(id))});return tx},close(){}};
+const idbDatabase={objectStoreNames:{contains:name=>idbCreated&&name==='records'},createObjectStore(){idbCreated=true;return{}},deleteObjectStore(){},transaction(){const tx={};tx.objectStore=()=>({put:row=>idbOperation(tx,()=>{idbRows.set(row.id,structuredClone(row));return row.id}),get:id=>idbOperation(tx,()=>structuredClone(idbRows.get(id))),getAll:()=>idbOperation(tx,()=>structuredClone([...idbRows.values()])),delete:id=>idbOperation(tx,()=>idbRows.delete(id))});return tx},close(){}};
 const indexedDB={open(){const req={result:idbDatabase};setTimeout(()=>{if(!idbCreated)req.onupgradeneeded?.();req.onsuccess?.()},0);return req}};
 const state={source:'',accent:'#5f8f7b',books:[],sessions:[],highlights:[],journals:{},weRead:{syncPhase:'verify',daily:{},reviewCursors:{},shelfBooks:[],notebooks:[]}};
-let requestCount=0,saveCount=0,pauseNext=false,largeNext=false;
+let requestCount=0,saveCount=0,pauseNext=false,largeNext=false,mediumNext=false;
 const json=value=>new Response(JSON.stringify({data:value}),{status:200,headers:{'content-type':'application/json'}});
 const fetch=async(_url,options)=>{
   requestCount++;
   if(pauseNext)return await new Promise((resolve,reject)=>{options.signal.addEventListener('abort',()=>reject(new DOMException('aborted','AbortError')),{once:true})});
   if(largeNext){largeNext=false;return new Response('x'.repeat(2*1024*1024+1),{status:200})}
+  if(mediumNext){mediumNext=false;return new Response(JSON.stringify({data:{padding:'x'.repeat(300*1024)}}),{status:200})}
   const body=JSON.parse(options.body),api=body.api_name;
   if(api==='/_list')return json({apis:[]});
   if(api==='/shelf/sync')return json({books:[{bookId:'book-1',title:'测试书',author:'作者',readUpdateTime:Date.now()/1000}]});
@@ -34,6 +35,7 @@ vm.runInNewContext(source,context,{filename:'yueji-extension.js'});
 const api=context.__yuejiWeReadDiagnostics;
 assert.ok(api,'diagnostic API should be installed');
 api.ensureStateShape();
+const savesBeforeSync=saveCount;
 
 async function oneStep(expectedPhase){const before=requestCount;await api.syncWeRead({mode:'continue',manual:false});assert.equal(requestCount-before,1,`phase ${expectedPhase} must issue exactly one request`)}
 
@@ -45,7 +47,7 @@ await oneStep('progress');assert.equal(state.weRead.syncPhase,'notebooks');asser
 await oneStep('notebooks');assert.equal(state.weRead.syncPhase,'bookmarks');
 await oneStep('bookmarks');assert.equal(state.weRead.syncPhase,'reviews');
 await oneStep('reviews');assert.equal(state.weRead.syncPhase,'complete');assert.equal(state.highlights.length,2);
-assert.ok(saveCount>0,'completed steps must be committed');
+assert.equal(saveCount,savesBeforeSync,'network sync must not serialize the full archive into localStorage');
 
 state.weRead.syncPhase='stats';state.weRead.statsDone=true;
 await oneStep('repeat-current-month');
@@ -63,17 +65,30 @@ pauseNext=false;largeNext=true;state.weRead.syncPhase='verify';
 await api.syncWeRead({mode:'continue',manual:false});
 assert.equal(state.weRead.syncState,'error','oversized client response must stop with an error state');
 
+mediumNext=true;state.weRead.syncPhase='verify';
+await api.syncWeRead({mode:'continue',manual:false});
+assert.equal(state.weRead.syncState,'error','large JSON must stop safely when a worker is unavailable');
+
 state.books[0].progress=77;
-await api.stageSyncSnapshot();
+await api.persistSyncIncrement({books:[state.books[0]]});
 state.books[0].progress=1;
 const recovered=await api.recoverSyncSnapshot();
-assert.equal(recovered,true,'pending IndexedDB snapshot must be detected');
-assert.equal(state.books[0].progress,77,'pending IndexedDB snapshot must restore book changes');
-assert.equal(idbRows.has('pending'),false,'committed recovery snapshot must be removed');
+assert.equal(recovered,true,'IndexedDB sync records must be detected');
+assert.equal(state.books[0].progress,77,'IndexedDB sync records must restore book changes');
+assert.equal(idbRows.has('book:book-1'),true,'incremental book record must remain durable');
+
+const bulkBooks=Array.from({length:500},(_,i)=>({key:`wr:bulk-${i}`,weReadBookId:`bulk-${i}`,title:`压力书籍 ${i}`,sources:['weread']}));
+const bulkSessions=Array.from({length:5000},(_,i)=>({id:`weread-day:stress-${i}`,date:`2026-${pad(i%12+1)}-${pad(i%28+1)}`,bookKey:'',minutes:1,seconds:60,source:'weread',aggregate:true}));
+const savesBeforeBulk=saveCount;
+await api.persistSyncIncrement({books:bulkBooks,sessions:bulkSessions});
+await new Promise(resolve=>setTimeout(resolve,25));
+assert.equal(saveCount,savesBeforeBulk,'large incremental writes must not invoke full localStorage serialization');
+assert.equal([...idbRows.values()].filter(row=>row.kind==='book').length,501,'500 additional books must be stored as independent records');
+assert.equal([...idbRows.values()].filter(row=>row.kind==='session'&&String(row.id).startsWith('session:weread-day:stress-')).length,5000,'5000 sessions must be stored as independent records');
 
 memory.set('yueji-archive-v1','x'.repeat(4*1024*1024+1));state.weRead.syncPhase='verify';
 const beforeCapacity=requestCount;
 await api.syncWeRead({mode:'continue',manual:false});
 assert.equal(requestCount,beforeCapacity,'capacity failure must stop before the network request');
 
-console.log('PASS state machine, deduplication, persistence, pause, response cap and capacity guard');
+console.log('PASS state machine, deduplication, incremental IndexedDB, pause, response cap and capacity guard');
