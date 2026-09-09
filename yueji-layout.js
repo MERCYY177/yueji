@@ -31,9 +31,9 @@ function minsLabel(m){
   return r?`${h}小时${r}分钟`:`${h}小时`;
 }
 
-function latestDateForBook(b){
+function latestDateForBook(b,sessionLatest){
   const dates=[];
-  state.sessions.forEach(s=>{if(s.bookKey===b.key&&s.date)dates.push(s.date)});
+  if(sessionLatest?.get(b.key))dates.push(sessionLatest.get(b.key));
   if(b.weReadLastRead)dates.push(b.weReadLastRead);
   if(b.finishedDate)dates.push(b.finishedDate);
   return dates.sort().at(-1)||'';
@@ -75,7 +75,8 @@ function renderHomeDashboard(){
     ['阅读天数',days.size,'天'],['阅读时长',minsLabel(mins),''],['看过',books.size,'本'],['读完',finished,'本']
   ].map(x=>`<div class="home-mini-kpi"><b>${esc(x[1])}</b><span>${x[0]}${x[2]?` · ${x[2]}`:''}</span></div>`).join('');
 
-  const recent=state.books.map(b=>({b,d:latestDateForBook(b)})).filter(x=>x.d).sort((a,b)=>b.d.localeCompare(a.d)).slice(0,3);
+  const sessionLatest=new Map();state.sessions.forEach(s=>{if(s.bookKey&&s.date&&s.date>(sessionLatest.get(s.bookKey)||''))sessionLatest.set(s.bookKey,s.date)});
+  const recent=state.books.map(b=>({b,d:latestDateForBook(b,sessionLatest)})).filter(x=>x.d).sort((a,b)=>b.d.localeCompare(a.d)).slice(0,3);
   document.getElementById('homeRecentBooks').innerHTML=recent.length?recent.map(({b,d})=>`<button class="home-recent-book" data-home-book="${esc(b.key)}">${bookCoverHtml(b)}<span><b>${esc(b.title||'未命名')}</b><small>${esc(b.author||'')} · ${Math.round(+b.progress||0)}%</small><span class="home-recent-progress"><i style="width:${Math.max(0,Math.min(100,+b.progress||0))}%"></i></span></span></button>`).join(''):'<div class="empty-text">还没有最近阅读记录。</div>';
   document.querySelectorAll('[data-home-book]').forEach(x=>x.onclick=()=>openBook(x.dataset.homeBook));
   hydrateCovers(document.getElementById('homeRecentBooks'));
@@ -155,7 +156,7 @@ function renderOverviewStats(){
   const byDay={};state.sessions.forEach(s=>{if(s.date)byDay[s.date]=(byDay[s.date]||0)+(+s.minutes||0)});
   const maxDay=Math.max(0,...Object.values(byDay));
   const finished=state.books.filter(b=>statusOf(b)==='done').length;
-  const noteCount=(state.highlights||[]).length+Object.values(state.journals||{}).filter(j=>String(j.quote||'').trim()||String(j.thought||'').trim()).length;
+  const noteCount=(window.yuejiHighlightCount?.()??(state.highlights||[]).length)+Object.values(state.journals||{}).filter(j=>String(j.quote||'').trim()||String(j.thought||'').trim()).length;
   const vals=[['藏书',state.books.length,'本'],['读完',finished,'本'],['总阅读时长',minsLabel(total),''],['阅读天数',days.size,'天'],['当前连续',st.current,'天'],['最长连续',st.max,'天'],['单日最高',minsLabel(maxDay),''],['书摘 / 感悟',noteCount,'条']];
   kpi.innerHTML=vals.map(x=>`<div class="kpi"><b>${esc(x[1])}</b><span>${x[0]}${x[2]?` · ${x[2]}`:''}</span></div>`).join('');
   renderTimelineMatrix();

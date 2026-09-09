@@ -27,7 +27,7 @@ function minutesFor(b,source){
 }
 
 function noteCountFor(b){
-  const h=(state.highlights||[]).filter(x=>x.bookKey===b.key).length;
+  const h=window.yuejiHighlightCountForBook?.(b.key)??(state.highlights||[]).filter(x=>x.bookKey===b.key).length;
   const j=Object.values(state.journals||{}).filter(x=>x.bookKey===b.key&&(String(x.quote||'').trim()||String(x.thought||'').trim())).length;
   return h+j;
 }
@@ -145,9 +145,15 @@ function render(){
   if(!c||!v)return;
   const range=c.dataset.range||'year',source=c.dataset.source||'all',now=new Date();
 
+  const sessionMap=new Map();
+  state.sessions.forEach(s=>{if(!s.bookKey||s.source==='weread')return;const row=sessionMap.get(s.bookKey)||{dates:[],minutes:0};if(s.date)row.dates.push(s.date);row.minutes+=N(s.minutes);sessionMap.set(s.bookKey,row)});
   let items=state.books.map(b=>{
-    const ds=datesFor(b,source);
-    return {b,dates:ds,date:ds.at(-1)||'',first:ds[0]||'',mins:minutesFor(b,source),notes:noteCountFor(b)};
+    const local=sessionMap.get(b.key)||{dates:[],minutes:0},ds=[];
+    if(source==='all'||source==='moon')ds.push(...local.dates);
+    if((source==='all'||source==='weread')&&b.weReadLastRead)ds.push(b.weReadLastRead);
+    if(b.finishedDate)ds.push(b.finishedDate);
+    const dates=[...new Set(ds.filter(Boolean))].sort(),mins=(source==='all'||source==='weread'?N(b.weReadSeconds)/60:0)+(source==='all'||source==='moon'?(local.minutes||N(b.minutes)):0);
+    return {b,dates,date:dates.at(-1)||'',first:dates[0]||'',mins,notes:noteCountFor(b)};
   }).filter(x=>x.date).filter(x=>source==='all'||x.b.sources?.includes(source));
 
   if(!items.length){
@@ -235,7 +241,7 @@ function annual(){
 }
 
 function init(){
-  injectStyles();shell();render();annual();
+  injectStyles();shell();if(typeof page!=='undefined'&&page==='analytics')render();annual();
   const oldSwitch=switchPage;
   switchPage=function(p){
     oldSwitch(p);

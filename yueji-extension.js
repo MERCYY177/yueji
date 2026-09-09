@@ -3,19 +3,23 @@
 
   const EXT_KEY = 'yueji-weread-key';
   const GATEWAY = '/.netlify/functions/weread-gateway';
-  const SKILL_VERSION = '1.0.5';
+  const SKILL_VERSION = '1.0.4';
   const AUTO_SYNC_MS = 6 * 60 * 60 * 1000;
   const REQUEST_TIMEOUT_MS = 18000;
   const SYNC_DEADLINE_MS = 60000;
   const PROGRESS_BATCH_SIZE = 8;
-  const NOTES_BATCH_SIZE = 6;
+  const NOTES_BATCH_SIZE = 3;
   const NOTEBOOK_PAGE_LIMIT = 20;
-  const REVIEW_PAGE_LIMIT = 20;
+  const REVIEW_PAGE_LIMIT = 4;
   const JSON_WORKER_THRESHOLD = 256 * 1024;
   const WR_SESSION_PREFIX = 'weread-day:';
   const WR_HIGHLIGHT_MARKER = '__YUEJI_WEREAD__';
   let activeSync = null;
   let notebooksCache = [];
+  let hiddenBookIds = new Set();
+  let bookByWeReadId = new Map();
+  let bookByIdentity = new Map();
+  let booksByTitle = new Map();
 
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const yieldToBrowser = () => new Promise(resolve => {
@@ -92,6 +96,8 @@
   const normalizeText = s => String(s || '').toLowerCase().replace(/[\s·•:：,，.。!！?？\-—_()（）\[\]【】《》<>]/g, '');
   const normalizeAuthor = s => normalizeText(s).replace(/著|编|译|作者/g, '');
   const sourceName = s => s === 'weread' ? '微信读书' : s === 'moon' ? '静读天下' : s === 'manual' ? '手动' : s || '';
+  const compactShelfBook = b => ({bookId:b?.bookId,title:b?.title,name:b?.name,author:b?.author,authorName:b?.authorName,category:b?.category,cover:b?.cover,isbn:b?.isbn,finishReading:b?.finishReading,readUpdateTime:b?.readUpdateTime});
+  const compactNotebook = nb => ({book:compactShelfBook(nb?.book||{bookId:nb?.bookId}),bookId:nb?.bookId,readingProgress:nb?.readingProgress,sort:nb?.sort});
 
   function isStorageLimitError(error) {
     return error?.name === 'QuotaExceededError' || error?.code === 22 || /quota|storage.*(full|limit)|exceeded/i.test(String(error?.message||error));
@@ -123,6 +129,8 @@
     state.weRead.statsDays = n(state.weRead.statsDays);
     state.weRead.syncState = String(state.weRead.syncState || (state.weRead.lastSync ? 'base-complete' : 'idle'));
     state.weRead.reviewCursors = state.weRead.reviewCursors && typeof state.weRead.reviewCursors === 'object' ? state.weRead.reviewCursors : {};
+    state.weRead.shelfBooks = Array.isArray(state.weRead.shelfBooks) ? state.weRead.shelfBooks : [];
+    state.weRead.notebooks = Array.isArray(state.weRead.notebooks) ? state.weRead.notebooks : [];
     state.weRead.autoRetryBlocked = Boolean(state.weRead.autoRetryBlocked);
     state.weRead.daily = state.weRead.daily && typeof state.weRead.daily === 'object' ? state.weRead.daily : {};
     state.books.forEach(b => {
@@ -140,7 +148,20 @@
     (state.highlights || []).forEach(h => {
       if (!h.source) h.source = h.bookmark === WR_HIGHLIGHT_MARKER ? 'weread' : 'moon';
     });
+    if(state.weRead.syncState==='running')state.weRead.syncState='paused';
+    rebuildBookIndexes();
     saveBestEffort();
+  }
+
+  function bookIdentity(title,author){return `${normalizeText(title)}|${normalizeAuthor(author)}`}
+  function rebuildBookIndexes(){
+    hiddenBookIds=new Set((state.hiddenWeReadBookIds||[]).map(String));
+    bookByWeReadId=new Map();bookByIdentity=new Map();booksByTitle=new Map();
+    state.books.forEach(b=>{
+      if(b.weReadBookId)bookByWeReadId.set(String(b.weReadBookId),b);
+      const title=normalizeText(b.title),id=bookIdentity(b.title,b.author);if(title&&!bookByIdentity.has(id))bookByIdentity.set(id,b);
+      if(title){const rows=booksByTitle.get(title)||[];rows.push(b);booksByTitle.set(title,rows)}
+    });
   }
 
   function injectStyles() {
@@ -289,7 +310,7 @@
   function beginSync(mode) {
     if (activeSync) return null;
     activeSync = { mode, cancelled:false, started:Date.now(), deadline:Date.now()+SYNC_DEADLINE_MS, requests:0, maxRequests:mode==='quick'?24:50, controller:null };
-    state.weRead.syncState='running';window.__yuejiWeReadSyncing = true; syncButtonState(true);updateWeReadProgressPanel(); return activeSync;
+    rebuildBookIndexes();state.weRead.syncState='running';window.__yuejiWeReadSyncing = true; syncButtonState(true);updateWeReadProgressPanel(); return activeSync;
   }
 
   function assertSyncActive(ctx) {
@@ -312,7 +333,8 @@
     if (ctx) ctx.requests++;
     const controller = new AbortController();
     if (ctx) ctx.controller = controller;
-    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const remaining=ctx?Math.max(1,ctx.deadline-Date.now()):REQUEST_TIMEOUT_MS;
+    const timer = setTimeout(() => controller.abort(), Math.min(REQUEST_TIMEOUT_MS,remaining));
     let res;
     try {
       res = await fetch(GATEWAY, {
@@ -324,6 +346,7 @@
     } catch (error) {
       if (error?.name === 'AbortError') {
         if (ctx?.cancelled) throw new Error('SYNC_PAUSED');
+        if(ctx&&Date.now()>=ctx.deadline)throw new Error('SYNC_TIME_LIMIT');
         throw new Error('微信读书响应超时，请稍后重试；已经同步的数据会保留');
       }
       throw error;
@@ -341,20 +364,23 @@
   function mergeBookFromWeRead(raw, progress) {
     if (!raw) return null;
     const bookId = String(raw.bookId || progress?.bookId || '');
-    if(bookId&&(state.hiddenWeReadBookIds||[]).map(String).includes(bookId))return null;
+    if(bookId&&hiddenBookIds.has(bookId))return null;
     const title = raw.title || raw.name || '';
     const author = raw.author || raw.authorName || '';
-    let existing = state.books.find(b => bookId && String(b.weReadBookId || '') === bookId);
+    let existing = bookId ? bookByWeReadId.get(bookId) : null;
     if (!existing && title) {
       const nt = normalizeText(title), na = normalizeAuthor(author);
-      existing = state.books.find(b => normalizeText(b.title) === nt && (!na || !normalizeAuthor(b.author) || normalizeAuthor(b.author) === na));
+      existing = bookByIdentity.get(`${nt}|${na}`) || (booksByTitle.get(nt)||[]).find(b=>!na||!normalizeAuthor(b.author)||normalizeAuthor(b.author)===na);
     }
     if (!existing) {
       existing = { key:`wr:${bookId || Date.now()}:${Math.random().toString(36).slice(2,7)}`, title:title || '未命名书籍', author, category:raw.category || '未分类', progress:n(progress?.book?.progress), status:n(progress?.book?.progress)>=100 || raw.finishReading===1 ? 'done' : n(progress?.book?.progress)>0 ? 'reading' : 'unread', minutes:0, words:0, color:palette[state.books.length % palette.length], sources:['weread'] };
       state.books.push(existing);
+      bookByIdentity.set(bookIdentity(existing.title,existing.author),existing);
+      const titleKey=normalizeText(existing.title),rows=booksByTitle.get(titleKey)||[];rows.push(existing);booksByTitle.set(titleKey,rows);
     }
     existing.sources = [...new Set([...(existing.sources || []), 'weread'])];
     existing.weReadBookId = bookId || existing.weReadBookId;
+    if(bookId)bookByWeReadId.set(bookId,existing);
     existing.weReadCover = raw.cover || existing.weReadCover;
     existing.cover = existing.cover || raw.cover || '';
     if (!existing.author && author) existing.author = author;
@@ -439,6 +465,7 @@
       if((i+1)%25===0){setWeReadStatus(`正在分批整理书架 ${i+1}/${books.length}……`);await yieldToBrowser()}
     }
     state.weRead.shelfTotal=books.length;
+    state.weRead.shelfBooks=books.map(compactShelfBook);
     await saveCheckpoint();
     return books;
   }
@@ -462,6 +489,7 @@
     const all=[]; let lastSort; const seenCursors=new Set();
     for(let guard=0;guard<NOTEBOOK_PAGE_LIMIT;guard++){
       const params={count:20}; if(lastSort) params.lastSort=lastSort;
+      setWeReadStatus(`正在读取微信读书笔记目录第 ${guard+1} 页……`);
       const data=await wereadCall('/user/notebooks',params,ctx); const rows=Array.isArray(data.books)?data.books:[]; all.push(...rows);
       if(!data.hasMore||!rows.length) break;
       const next=rows[rows.length-1]?.sort;
@@ -469,14 +497,16 @@
       seenCursors.add(String(next)); lastSort=next;
     }
     const dedup=new Map(); all.forEach(nb=>{const id=String(nb?.book?.bookId||nb?.bookId||'');if(id&&!dedup.has(id))dedup.set(id,nb)});
-    return [...dedup.values()];
+    return [...dedup.values()].map(compactNotebook);
   }
 
   async function syncNotesBatch(ctx) {
     setWeReadStatus('正在读取微信读书笔记目录……');
     if(state.weRead.notesDone)return {done:true,completed:state.weRead.notebooksTotal||0,total:state.weRead.notebooksTotal||0};
-    const notebooks=notebooksCache.length?notebooksCache:await fetchAllNotebooks(ctx);
-    if(!notebooksCache.length){notebooksCache=notebooks;state.weRead.notebooksTotal=notebooks.length;await saveCheckpoint()}
+    const savedNotebooks=state.weRead.notebooks||[];
+    const notebooks=notebooksCache.length?notebooksCache:savedNotebooks.length?savedNotebooks:await fetchAllNotebooks(ctx);
+    if(!notebooksCache.length)notebooksCache=notebooks;
+    if(!savedNotebooks.length){state.weRead.notebooks=notebooks;state.weRead.notebooksTotal=notebooks.length;await saveCheckpoint()}
     const start=Math.min(n(state.weRead.notesCursor),notebooks.length),batch=notebooks.slice(start,start+NOTES_BATCH_SIZE);
     let completed=0;
     for(const nb of batch){
@@ -493,16 +523,17 @@
         for(let guard=0;guard<REVIEW_PAGE_LIMIT;guard++){
           const data=await wereadCall('/review/list/mine',{bookid:rawBook.bookId,synckey,count:20},ctx);
           const pageRows=[];(data.reviews||[]).forEach(item=>{const r=item.review||item,content=r.content||'',abstract=r.abstract||'';if(!content&&!abstract)return;const h={id:`wr-review:${r.reviewId||`${rawBook.bookId}:${normalizeText(content||abstract).slice(0,40)}`}`,bookKey:merged.key,date:safeDate(r.createTime)||todayKey,time:n(r.createTime)*1000,quote:abstract,note:content,bookmark:WR_HIGHLIGHT_MARKER,source:'weread',sourceId:r.reviewId||''};pageRows.push(h)});
-          if(!data.hasMore){delete state.weRead.reviewCursors[reviewKey];reviewComplete=true;await saveCheckpoint({highlightRows:[...bookRows,...pageRows]});bookRows.length=0;break}
+          bookRows.push(...pageRows);
+          if(!data.hasMore){delete state.weRead.reviewCursors[reviewKey];reviewComplete=true;break}
           const next=data.synckey;
-          if(!next||String(next)===String(synckey)||seenSyncKeys.has(String(next))){delete state.weRead.reviewCursors[reviewKey];reviewComplete=true;await saveCheckpoint({highlightRows:[...bookRows,...pageRows]});bookRows.length=0;break}
-          seenSyncKeys.add(String(next)); synckey=next; state.weRead.reviewCursors[reviewKey]=synckey; await saveCheckpoint({highlightRows:[...bookRows,...pageRows]});bookRows.length=0;
+          if(!next||String(next)===String(synckey)||seenSyncKeys.has(String(next))){delete state.weRead.reviewCursors[reviewKey];reviewComplete=true;break}
+          seenSyncKeys.add(String(next)); synckey=next; state.weRead.reviewCursors[reviewKey]=synckey;
         }
         if(!reviewComplete)throw new Error('SYNC_BATCH_LIMIT');
-      }catch(e){if(/^SYNC_/.test(e.message))throw e;console.warn('WeRead reviews skipped',e)}
+      }catch(e){if(/^SYNC_/.test(e.message)){if(bookRows.length)await saveCheckpoint({highlightRows:bookRows});throw e}console.warn('WeRead reviews skipped',e)}
       completed++; state.weRead.notesCursor=start+completed; await saveCheckpoint({highlightRows:bookRows}); await yieldToBrowser();
     }
-    const done=start+completed>=notebooks.length; state.weRead.notesCursor=done?0:start+completed; state.weRead.notesDone=done;if(done)notebooksCache=[];await saveCheckpoint();
+    const done=start+completed>=notebooks.length; state.weRead.notesCursor=done?0:start+completed; state.weRead.notesDone=done;if(done){notebooksCache=[];state.weRead.notebooks=[]}await saveCheckpoint();
     return {done,completed:start+completed,total:notebooks.length};
   }
 
@@ -511,9 +542,15 @@
     if(window.__yuejiArchiveBusy)return setWeReadStatus('网页正在导入或导出数据，请完成后再同步。');
     const ctx=beginSync(mode); if(!ctx)return setWeReadStatus('已有同步任务正在进行，可以先点“暂停同步”。');
     try{
-      setWeReadStatus('正在连接微信读书……');
-      await wereadCall('/_list',{},ctx);
-      const books=await syncShelfBase(ctx);
+      let books=[];
+      if(mode==='quick'){
+        setWeReadStatus('正在连接微信读书……');
+        await wereadCall('/_list',{},ctx);
+        books=await syncShelfBase(ctx);
+      }else{
+        books=state.weRead.shelfBooks||[];
+        if(!books.length){setWeReadStatus('没有可继续的书架快照，正在补一次基础数据……');books=await syncShelfBase(ctx)}
+      }
       let extra;
       if(mode==='quick'){
         const overall=await wereadCall('/readdata/detail',{mode:'overall'},ctx);
@@ -521,7 +558,7 @@
         const daily=await fetchHistoryDaily(overall,false,ctx); replaceWeReadDaily(daily);
         state.weRead.lastSync=Date.now(); state.weRead.registTime=overall?.registTime||state.weRead.registTime||0; state.weRead.autoRetryBlocked=false;
         state.weRead.statsDays=Object.keys(daily).length;
-        if(resetDetails){state.weRead.progressCursor=0;state.weRead.notesCursor=0;state.weRead.progressDone=false;state.weRead.notesDone=false;state.weRead.progressTotal=0;state.weRead.notebooksTotal=0;state.weRead.reviewCursors={};notebooksCache=[]}
+        if(resetDetails){state.weRead.progressCursor=0;state.weRead.notesCursor=0;state.weRead.progressDone=false;state.weRead.notesDone=false;state.weRead.progressTotal=0;state.weRead.notebooksTotal=0;state.weRead.reviewCursors={};state.weRead.notebooks=[];notebooksCache=[]}
         state.weRead.syncState=state.weRead.progressDone&&state.weRead.notesDone?'complete':'base-complete';
         extra=`基础同步完成：${books.length} 本书 · ${Object.keys(daily).length} 天记录。进度和书摘请点“继续同步”。`;
       }else{
@@ -549,7 +586,7 @@
   function renderAllSafe(){
     try{renderToday()}catch{} try{renderCalendar()}catch{} try{renderBookOptions()}catch{} if(page==='notes')try{renderNotes()}catch{}
     try{if(page==='analytics')renderAnalytics()}catch{} try{if(page==='monthly'){renderMonthly();renderYearWall()}}catch{}
-    renderEvolution(); patchNoteSources();
+    if(page==='notes')patchNoteSources();
   }
 
   function updateSourcePill(){
@@ -609,14 +646,14 @@
   }
 
   function installHooks(){
-    const originalSwitchPage=switchPage; switchPage=function(p){originalSwitchPage(p);if(p==='analytics')setTimeout(renderEvolution,0);if(p==='notes')setTimeout(patchNoteSources,0)};
+    const originalSwitchPage=switchPage; switchPage=function(p){originalSwitchPage(p);if(p==='analytics'&&!document.getElementById('readingEvolutionCard')?.dataset.greenTimeline)setTimeout(renderEvolution,0);if(p==='notes')setTimeout(patchNoteSources,0)};
     document.getElementById('noteSearch')?.addEventListener('input',()=>setTimeout(patchNoteSources,0)); document.getElementById('noteBookFilter')?.addEventListener('change',()=>setTimeout(patchNoteSources,0));
-    document.getElementById('mrproFile')?.addEventListener('change',()=>setTimeout(()=>{ensureStateShape();updateSourcePill();renderEvolution()},1500));
+    document.getElementById('mrproFile')?.addEventListener('change',()=>setTimeout(()=>{ensureStateShape();updateSourcePill();if(page==='analytics')renderEvolution()},1500));
     const notes=document.getElementById('notesList'); if(notes)new MutationObserver(()=>patchNoteSources()).observe(notes,{childList:true,subtree:true});
   }
 
-  async function autoSyncIfNeeded(){const key=localStorage.getItem(EXT_KEY);if(!key||state.weRead.autoRetryBlocked)return;if(Date.now()-n(state.weRead.lastSync)<AUTO_SYNC_MS)return;await syncWeRead({mode:'quick',manual:false})}
+  function autoSyncIfNeeded(){const key=localStorage.getItem(EXT_KEY);if(!key||state.weRead.autoRetryBlocked||document.visibilityState!=='visible'||!navigator.onLine)return;if(Date.now()-n(state.weRead.lastSync)<AUTO_SYNC_MS)return;setWeReadStatus('微信读书数据可以更新。为避免手机自动卡顿，请在方便时点击“同步基础数据”。')}
 
-  function init(){ensureStateShape();injectStyles();injectSettings();injectEvolution();installHooks();updateSourcePill();renderEvolution();patchNoteSources();setTimeout(autoSyncIfNeeded,700)}
+  function init(){ensureStateShape();injectStyles();injectSettings();injectEvolution();installHooks();updateSourcePill();patchNoteSources();const schedule=()=>autoSyncIfNeeded();if(globalThis.requestIdleCallback)requestIdleCallback(schedule,{timeout:15000});else setTimeout(schedule,10000)}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();

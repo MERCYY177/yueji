@@ -1,4 +1,5 @@
 const UPSTREAM = "https://i.weread.qq.com/api/agent/gateway";
+const UPSTREAM_TIMEOUT_MS = 15000;
 
 const ALLOWED_APIS = new Set([
   "/_list",
@@ -59,7 +60,8 @@ export default async (request) => {
         "content-type": "application/json",
         accept: "application/json"
       },
-      body: JSON.stringify(safePayload)
+      body: JSON.stringify(safePayload),
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)
     });
 
     const body = await upstream.text();
@@ -72,6 +74,7 @@ export default async (request) => {
     });
   } catch (error) {
     console.error("WeRead gateway failed", error);
-    return json({ message: "暂时无法连接微信读书，请稍后重试" }, 502);
+    const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
+    return json({ message: timedOut ? "微信读书响应超时，请稍后继续同步" : "暂时无法连接微信读书，请稍后重试" }, timedOut ? 504 : 502);
   }
 };

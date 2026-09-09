@@ -122,7 +122,8 @@
         for(let i=0;i<first;i++){const x=document.createElement('i');x.className='cal-day out';grid.append(x)}
         for(let n=1;n<=last;n++){
           const key=dateKey(new Date(y,m,n)),dd=dayData(key),b=document.createElement('button');b.className='cal-day';
-          if(dd.read){b.classList.add('read');count++}
+          if(key<state.challengeStart||key>state.challengeEnd)b.classList.add('out');
+          else if(dd.read){b.classList.add('read');count++}
           if(dd.journal?.thought||dd.journal?.quote)b.classList.add('note');
           if(key===todayKey)b.classList.add('today');
           b.title=fmtDate(key);b.onclick=()=>openJournal(key);grid.append(b);
