@@ -437,9 +437,10 @@
     }
     const sec = n(progress?.book?.recordReadingTime);
     if (sec > 0) existing.weReadSeconds = sec;
-    const updateTime = progress?.book?.updateTime || raw.readUpdateTime;
-    if (updateTime) existing.weReadLastRead = safeDate(updateTime);
-    if(progress?.book){const oldRows=Array.isArray(existing.weReadSnapshots)?existing.weReadSnapshots:[],previous=[...oldRows].sort((a,b)=>String(a.date).localeCompare(String(b.date))).at(-1),changed=!!previous&&(sec>n(previous.seconds)||p>n(previous.progress));const snapshot={date:todayKey,progress:p,seconds:sec,updateTime:n(updateTime),activity:changed||previous?.activity===true};const rows=oldRows.filter(x=>x?.date!==todayKey);rows.push(snapshot);existing.weReadSnapshots=rows.sort((a,b)=>String(a.date).localeCompare(String(b.date))).slice(-120)}
+    const detailUpdateTime = progress?.book?.updateTime || progress?.updateTime;
+    if (detailUpdateTime) existing.weReadLastRead = safeDate(detailUpdateTime);
+    else if (raw.readUpdateTime) existing.weReadShelfReadUpdate = safeDate(raw.readUpdateTime);
+    if(progress?.book){const oldRows=Array.isArray(existing.weReadSnapshots)?existing.weReadSnapshots:[],previous=[...oldRows].sort((a,b)=>String(a.date).localeCompare(String(b.date))).at(-1),detailDate=safeDate(detailUpdateTime),started=sec>0||p>0||progress.book.isStartReading===1||progress.book.isStartReading===true,hasVerifiedSnapshot=oldRows.some(x=>x?.activity===true||String(x?.evidence||'').startsWith('detail-')),firstDetailedActivity=!hasVerifiedSnapshot&&started&&!!detailDate,changed=!!previous&&(sec>n(previous.seconds)||p>n(previous.progress)),snapshotDate=detailDate||(changed?todayKey:(previous?.date||todayKey)),sameDateActivity=previous?.date===snapshotDate&&previous?.activity===true,snapshot={date:snapshotDate,progress:p,seconds:sec,updateTime:n(detailUpdateTime),activity:firstDetailedActivity||changed||sameDateActivity,evidence:firstDetailedActivity?'detail-first':changed?'detail-change':sameDateActivity?(previous.evidence||'detail-preserved'):'baseline'};const rows=oldRows.filter(x=>x?.date!==snapshotDate&&!(firstDetailedActivity&&x?.activity!==true&&!String(x?.evidence||'').startsWith('detail-')));rows.push(snapshot);existing.weReadSnapshots=rows.sort((a,b)=>String(a.date).localeCompare(String(b.date))).slice(-120)}
     const finishTime = progress?.book?.finishTime;
     if (finishTime && !existing.finishedDate) existing.finishedDate = safeDate(finishTime);
     return existing;

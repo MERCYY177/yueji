@@ -11,6 +11,7 @@ const idbDatabase={objectStoreNames:{contains:name=>idbCreated&&name==='records'
 const indexedDB={open(){const req={result:idbDatabase};setTimeout(()=>{if(!idbCreated)req.onupgradeneeded?.();req.onsuccess?.()},0);return req}};
 const state={source:'',accent:'#5f8f7b',books:[],sessions:[],highlights:[],journals:{},weRead:{syncPhase:'verify',daily:{},reviewCursors:{},shelfBooks:[],notebooks:[]}};
 let requestCount=0,saveCount=0,pauseNext=false,largeNext=false,mediumNext=false;
+const detailUpdateTime=Math.floor(new Date().setHours(8,0,0,0)/1000);
 const json=value=>new Response(JSON.stringify({data:value}),{status:200,headers:{'content-type':'application/json'}});
 const fetch=async(_url,options)=>{
   requestCount++;
@@ -21,7 +22,7 @@ const fetch=async(_url,options)=>{
   if(api==='/_list')return json({apis:[]});
   if(api==='/shelf/sync')return json({books:[{bookId:'book-1',title:'测试书',author:'作者',readUpdateTime:Date.now()/1000}]});
   if(api==='/readdata/detail'){const date=new Date(body.baseTime*1000),stamp=Math.floor(new Date(date.getFullYear(),date.getMonth(),2).getTime()/1000);return json({dailyReadTimes:{[stamp]:600}})}
-  if(api==='/book/getprogress')return json({book:{bookId:'book-1',progress:35,isStartReading:1,recordReadingTime:600}});
+  if(api==='/book/getprogress')return json({book:{bookId:'book-1',progress:35,isStartReading:1,recordReadingTime:600,updateTime:detailUpdateTime}});
   if(api==='/user/notebooks')return json({books:[{book:{bookId:'book-1',title:'测试书',author:'作者'},readingProgress:35,sort:10}],hasMore:false});
   if(api==='/book/bookmarklist')return json({updated:[{bookmarkId:'mark-1',markText:'划线内容',createTime:Date.now()/1000}]});
   if(api==='/review/list/mine')return json({reviews:[{review:{reviewId:'review-1',content:'想法内容',abstract:'摘录',createTime:Date.now()/1000}}],hasMore:false});
@@ -41,9 +42,18 @@ async function oneStep(expectedPhase){const before=requestCount;await api.syncWe
 
 await oneStep('verify');assert.equal(state.weRead.syncPhase,'shelf');
 await oneStep('shelf');assert.equal(state.weRead.syncPhase,'stats');assert.equal(state.books.length,1);
+assert.equal(state.books[0].weReadSnapshots?.length||0,0,'shelf readUpdateTime must never create a dated reading snapshot');
 let guard=0;while(state.weRead.syncPhase==='stats'&&guard++<12)await oneStep('stats');
 assert.equal(state.weRead.syncPhase,'progress');
 await oneStep('progress');assert.equal(state.weRead.syncPhase,'notebooks');assert.equal(state.books[0].progress,35);
+assert.equal(state.books[0].weReadSnapshots.length,1,'first detailed progress with a valid update time must create one snapshot');
+assert.equal(state.books[0].weReadSnapshots[0].date,dateKey(new Date(detailUpdateTime*1000)),'first detailed activity must use the detail timestamp date');
+assert.equal(state.books[0].weReadSnapshots[0].activity,true,'started detailed progress must be accepted as first verified activity');
+assert.equal(state.books[0].weReadSnapshots[0].evidence,'detail-first','first activity must retain its evidence type');
+state.books[0].weReadSnapshots=[{date:context.todayKey,progress:35,seconds:600,activity:false}];
+api.mergeBookFromWeRead({bookId:'book-1',title:'测试书',author:'作者'},{book:{progress:35,isStartReading:1,recordReadingTime:600,updateTime:detailUpdateTime}});
+assert.equal(state.books[0].weReadSnapshots.length,1,'a legacy ambiguous baseline must be replaced instead of leaving a duplicate circle');
+assert.equal(state.books[0].weReadSnapshots[0].activity,true,'a legacy baseline must upgrade when detailed timestamp evidence becomes available');
 await oneStep('notebooks');assert.equal(state.weRead.syncPhase,'bookmarks');
 await oneStep('bookmarks');assert.equal(state.weRead.syncPhase,'reviews');
 await oneStep('reviews');assert.equal(state.weRead.syncPhase,'complete');assert.equal(state.highlights.length,2);

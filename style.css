@@ -14,3 +14,5 @@
 .book-source{color:var(--accent)!important;font-size:.66rem!important;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .calendar-year-select{justify-self:center;width:118px;text-align:center;font-family:"Songti SC","STSong",serif;font-size:1rem;font-weight:700;background:var(--card)}
 .calendar-nav .round-btn:disabled{cursor:default;opacity:.28}
+.sheet>.sheet-head{position:sticky;top:-12px;z-index:6;margin:0 0 18px;padding:12px 0;background:color-mix(in srgb,var(--card) 96%,transparent);backdrop-filter:blur(12px)}
+.sheet>.sheet-head .close-btn{flex:none}

@@ -50,8 +50,10 @@ assert.match(core,/evidenceSource/,'each evolution node must carry its own readi
 assert.match(core,/data-evidence-source/,'the rendered node must expose its evidence source for styling and inspection');
 assert.match(core,/window\.yuejiRenderEvolution=render/,'the corrected evolution renderer must be the shared runtime entry point');
 assert.doesNotMatch(features,/h\+Math\.floor\(dataIndex\/levels\.length\)\*16/,'theme depth colors must not drift into a different hue as the book index grows');
-assert.match(features,/mergeSelectedBooks/,'book merge manager must always offer manual two-book selection');
-assert.match(features,/入口始终显示/,'merge location must be explicit even when no automatic candidate exists');
+assert.doesNotMatch(features,/mergeSelectedBooks|选择任意两本|手动选择任意两本/,'book merge manager must not allow arbitrary books to be force-merged');
+assert.match(features,/function isMergeCandidate/,'confirmed merge must be guarded by a same-book candidate check');
+assert.match(features,/at\.length>=2&&at===bt&&\(!aa\|\|!ba\|\|aa===ba\)/,'merge candidates must have the same normalized title and compatible authors');
+assert.match(features,/这两条记录不像同一本书，已阻止合并/,'unsafe merge attempts must be blocked with a clear explanation');
 assert.match(features,/mergeBooksShortcut/,'library must expose a visible shortcut to the merge manager');
 assert.match(app,/window\.yuejiRenderEvolution\?\.\(\)/,'state refreshes must use the corrected evolution renderer');
 assert.match(extension,/window\.yuejiRenderEvolution\|\|renderEvolution/,'Moon imports must not overwrite the corrected chart with the legacy renderer');

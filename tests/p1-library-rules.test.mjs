@@ -28,6 +28,9 @@ assert.match(app,/compactRemoteCover/,'remote covers must be compressed before c
 assert.match(extension,/progressSource!==['"]manual['"]/,'manual progress must win over WeRead progress');
 assert.match(extension,/hidden\.has\(String\(incoming\.weReadBookId\)\)/,'hidden WeRead books must be filtered during recovery');
 assert.match(extension,/weReadSnapshots/,'WeRead progress snapshots must be retained for future activity comparisons');
+assert.match(extension,/firstDetailedActivity=!hasVerifiedSnapshot&&started&&!!detailDate/,'first detailed progress with a valid timestamp must create verified activity');
+assert.match(extension,/weReadShelfReadUpdate = safeDate\(raw\.readUpdateTime\)/,'shelf metadata must be stored separately from detailed activity evidence');
+assert.doesNotMatch(extension,/progress\?\.book\?\.updateTime \|\| raw\.readUpdateTime/,'detail and shelf timestamps must never be collapsed into one activity timestamp');
 assert.match(features,/yuejiDeleteWeReadSyncBook/,'full deletion must remove the WeRead IndexedDB record');
 assert.match(features,/疑似重复书籍组/,'diagnostics must report possible duplicate books');
 assert.match(features,/孤立阅读记录/,'diagnostics must report orphan reading sessions');
@@ -43,5 +46,7 @@ for(const file of ['lxgw-neo-zhisong.woff','clear-han-serif.woff','huiwen-mincho
   const size=fs.statSync(new URL(`../assets/fonts/${file}`,import.meta.url)).size;
   assert.ok(size>100_000&&size<16*1024*1024,`${file} must be a valid bounded webfont asset`);
 }
+const style=fs.readFileSync(new URL('../style.css',import.meta.url),'utf8');
+assert.match(style,/\.sheet>\.sheet-head\{position:sticky;top:-12px/,'sheet close controls must stay reachable while the mobile sheet scrolls');
 
 console.log('PASS P1 cover caching, source priority, calendar totals, delete recovery and export font rules');
