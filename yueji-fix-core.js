@@ -4,39 +4,16 @@ const N=v=>Number(v)||0;
 const SL=s=>s==='weread'?'微信读书':s==='moon'?'静读天下':s==='manual'?'手动':s||'';
 const ex=s=>String(s||'').replace(/[<>&"']/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
 
-function datesFor(b,source){
-  const out=[];
-  if(source==='all'||source==='moon'){
-    state.sessions.forEach(s=>{
-      if(s.bookKey===b.key&&s.date&&s.source!=='weread')out.push(s.date);
-    });
-  }
-  if(source==='all'||source==='weread')out.push(...(window.yuejiVerifiedWeReadActivityDates?.(b)||[]));
-  if(b.finishedDate)out.push(b.finishedDate);
-  return [...new Set(out.filter(Boolean))].sort();
-}
-
-function minutesFor(b,source){
-  let mins=0;
-  if(source==='all'||source==='weread')mins+=N(b.weReadSeconds)/60;
-  if(source==='all'||source==='moon'){
-    const local=state.sessions.filter(s=>s.bookKey===b.key&&s.source!=='weread').reduce((a,s)=>a+N(s.minutes),0);
-    mins+=local||N(b.minutes);
-  }
-  return mins;
-}
-
 function noteCountFor(b){
   const h=window.yuejiHighlightCountForBook?.(b.key)??(state.highlights||[]).filter(x=>x.bookKey===b.key).length;
   const j=Object.values(state.journals||{}).filter(x=>x.bookKey===b.key&&(String(x.quote||'').trim()||String(x.thought||'').trim())).length;
   return h+j;
 }
 
-function sourceTone(b){
-  const src=b.sources||[];
-  if(src.includes('weread')&&src.includes('moon'))return 'deep';
-  if(src.includes('weread'))return 'main';
-  if(src.includes('moon'))return 'mid';
+function sourceTone(item){
+  if(item.evidenceSource==='mixed')return 'deep';
+  if(item.evidenceSource==='weread')return 'main';
+  if(item.evidenceSource==='moon')return 'mid';
   return 'soft';
 }
 
@@ -140,21 +117,35 @@ function buildCurve(a,b){
   return `M ${a.x.toFixed(1)} ${a.y.toFixed(1)} C ${c1x.toFixed(1)} ${a.y.toFixed(1)}, ${c2x.toFixed(1)} ${b.y.toFixed(1)}, ${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
 }
 
+function buildEvolutionItems(source){
+  const sessionMap=new Map();
+  state.sessions.forEach(s=>{if(!s.bookKey||s.source!=='moon')return;const row=sessionMap.get(s.bookKey)||{dates:[],minutes:0};if(s.date)row.dates.push(s.date);row.minutes+=N(s.minutes);sessionMap.set(s.bookKey,row)});
+  return state.books.map(b=>{
+    const local=sessionMap.get(b.key)||{dates:[],minutes:0};
+    const moonDates=[...new Set(local.dates.filter(Boolean))].sort();
+    const wereadDates=[...new Set(window.yuejiVerifiedWeReadActivityDates?.(b)||[])].filter(Boolean).sort();
+    const manualDates=Object.values(state.journals||{}).filter(j=>j?.read&&j.bookKey===b.key&&j.date).map(j=>j.date).sort();
+    let dates=[],mins=0,evidenceSource=source;
+    if(source==='moon'){dates=moonDates;mins=local.minutes}
+    else if(source==='weread'){dates=wereadDates;mins=N(b.weReadSeconds)/60}
+    else{
+      const evidence=[...moonDates.map(date=>({date,source:'moon'})),...wereadDates.map(date=>({date,source:'weread'})),...manualDates.map(date=>({date,source:'manual'}))];
+      if(b.finishedDate)evidence.push({date:b.finishedDate,source:'manual'});
+      dates=[...new Set(evidence.map(x=>x.date).filter(Boolean))].sort();
+      const latest=dates.at(-1)||'',latestSources=new Set(evidence.filter(x=>x.date===latest).map(x=>x.source));
+      evidenceSource=latestSources.size>1?'mixed':[...latestSources][0]||'manual';
+      mins=local.minutes+N(b.weReadSeconds)/60;
+    }
+    return {b,dates,date:dates.at(-1)||'',first:dates[0]||'',mins,notes:noteCountFor(b),evidenceSource};
+  }).filter(x=>x.date);
+}
+
 function render(){
   const c=shell(),v=document.getElementById('evolutionCanvas');
   if(!c||!v)return;
   const range=c.dataset.range||'year',source=c.dataset.source||'all',now=new Date();
 
-  const sessionMap=new Map();
-  state.sessions.forEach(s=>{if(!s.bookKey||s.source==='weread')return;const row=sessionMap.get(s.bookKey)||{dates:[],minutes:0};if(s.date)row.dates.push(s.date);row.minutes+=N(s.minutes);sessionMap.set(s.bookKey,row)});
-  let items=state.books.map(b=>{
-    const local=sessionMap.get(b.key)||{dates:[],minutes:0},ds=[];
-    if(source==='all'||source==='moon')ds.push(...local.dates);
-    if(source==='all'||source==='weread')ds.push(...(window.yuejiVerifiedWeReadActivityDates?.(b)||[]));
-    if(b.finishedDate)ds.push(b.finishedDate);
-    const dates=[...new Set(ds.filter(Boolean))].sort(),mins=(source==='all'||source==='weread'?N(b.weReadSeconds)/60:0)+(source==='all'||source==='moon'?(local.minutes||N(b.minutes)):0);
-    return {b,dates,date:dates.at(-1)||'',first:dates[0]||'',mins,notes:noteCountFor(b)};
-  }).filter(x=>x.date).filter(x=>source==='all'||x.b.sources?.includes(source));
+  let items=buildEvolutionItems(source);
 
   if(!items.length){
     v.innerHTML='<div class="evo-green-empty">这个范围还没有可以定位到真实日期的阅读记录。</div><div class="evo-green-tip" id="evolutionTip"></div>';
@@ -209,9 +200,9 @@ function render(){
   const path=pos.slice(1).map((p,i)=>`<path d="${buildCurve(pos[i],p)}" fill="none" stroke="var(--evo-main)" stroke-width="1.35" stroke-linecap="round" opacity=".52"/>`).join('');
 
   const nodes=pos.map((p,i)=>{
-    const tone=sourceTone(p.b),fill=tone==='deep'?'var(--evo-deep)':tone==='main'?'var(--evo-main)':tone==='mid'?'var(--evo-mid)':'var(--evo-soft)';
+    const tone=sourceTone(p),fill=tone==='deep'?'var(--evo-deep)':tone==='main'?'var(--evo-main)':tone==='mid'?'var(--evo-mid)':'var(--evo-soft)';
     const ring=p.notes>0?`<circle cx="${p.x}" cy="${p.y}" r="${(p.r+5).toFixed(1)}" fill="none" stroke="var(--evo-main)" stroke-width="1" opacity=".58"/>`:'';
-    return `<g data-evo-i="${i}" style="cursor:pointer">${ring}<circle cx="${p.x}" cy="${p.y}" r="${p.r.toFixed(1)}" fill="${fill}" stroke="#f8faf8" stroke-width="1.8" opacity=".93"/></g>`;
+    return `<g data-evo-i="${i}" data-evidence-source="${p.evidenceSource}" style="cursor:pointer">${ring}<circle cx="${p.x}" cy="${p.y}" r="${p.r.toFixed(1)}" fill="${fill}" stroke="#f8faf8" stroke-width="1.8" opacity=".93"/></g>`;
   }).join('');
 
   v.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="阅读演化时间线">${monthGrid}${yearRows}${path}${nodes}</svg><div class="evo-green-tip" id="evolutionTip"></div>`;
@@ -225,11 +216,14 @@ function render(){
       tip.style.left=`${Math.min(rect.width-250,Math.max(8,e.clientX-rect.left+12))}px`;
       tip.style.top=`${Math.max(8,e.clientY-rect.top-8)}px`;
       const sources=(p.b.sources||[]).map(SL).filter(Boolean).join(' · ')||'未标记来源';
-      tip.innerHTML=`<b>${ex(p.b.title||'未命名')}</b>${ex(p.date)}<br>${p.mins>0?`真实累计阅读约 ${Math.round(p.mins)} 分钟<br>`:''}${ex(sources)}${p.notes?`<br>书摘 / 感悟 ${p.notes} 条`:''}`;
+      tip.innerHTML=`<b>${ex(p.b.title||'未命名')}</b>${ex(p.date)}<br>这颗圆的日期证据：${ex(p.evidenceSource==='mixed'?'微信读书 + 静读天下':SL(p.evidenceSource))}<br>${p.mins>0?`真实累计阅读约 ${Math.round(p.mins)} 分钟<br>`:''}书籍档案来源：${ex(sources)}${p.notes?`<br>书摘 / 感悟 ${p.notes} 条`:''}`;
     };
     el.onmouseenter=show;el.onmousemove=show;el.onmouseleave=()=>tip.style.display='none';
   });
 }
+
+window.yuejiRenderEvolution=render;
+window.yuejiBuildEvolutionItems=buildEvolutionItems;
 
 function annual(){
   const w=document.querySelector('.year-wall');

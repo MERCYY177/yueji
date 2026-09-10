@@ -561,18 +561,19 @@
 
   function readingMinutesForBook(b,sourceFilter){
     let mins=0; if(sourceFilter==='all'||sourceFilter==='weread')mins+=n(b.weReadSeconds)/60;
-    if(sourceFilter==='all'||sourceFilter==='moon'){const moon=state.sessions.filter(s=>s.bookKey===b.key&&s.source!=='weread').reduce((a,s)=>a+n(s.minutes),0);mins+=moon||n(b.minutes)}
+    if(sourceFilter==='all'||sourceFilter==='moon'){const moon=state.sessions.filter(s=>s.bookKey===b.key&&s.source==='moon').reduce((a,s)=>a+n(s.minutes),0);mins+=moon}
     return mins;
   }
   function actualDateForBook(b,sourceFilter){
-    const dates=[]; if(sourceFilter==='all'||sourceFilter==='moon')state.sessions.forEach(s=>{if(s.bookKey===b.key&&s.date&&s.source!=='weread')dates.push(s.date)});
+    const dates=[]; if(sourceFilter==='all'||sourceFilter==='moon')state.sessions.forEach(s=>{if(s.bookKey===b.key&&s.date&&s.source==='moon')dates.push(s.date)});
     if(sourceFilter==='all'||sourceFilter==='weread')(window.yuejiVerifiedWeReadActivityDates?.(b)||[]).forEach(date=>dates.push(date));
     if(sourceFilter==='all')Object.values(state.journals||{}).forEach(j=>{if(j?.read&&j.bookKey===b.key&&j.date)dates.push(j.date)});
-    if(b.finishedDate)dates.push(b.finishedDate); dates.sort(); return dates[dates.length-1]||'';
+    if(sourceFilter==='all'&&b.finishedDate)dates.push(b.finishedDate); dates.sort(); return dates[dates.length-1]||'';
   }
   function escapeXml(s=''){return String(s).replace(/[<>&"']/g,ch=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&apos;'}[ch]))}
 
   function renderEvolution(){
+    if(window.yuejiRenderEvolution)return window.yuejiRenderEvolution();
     const card=document.getElementById('readingEvolutionCard'),canvas=document.getElementById('evolutionCanvas'); if(!card||!canvas)return;
     const range=card.dataset.range||'year',sourceFilter=card.dataset.source||'all',now=new Date(); let start;
     if(range==='year')start=new Date(now.getFullYear(),0,1); else if(range==='12m')start=new Date(now.getFullYear(),now.getMonth()-11,1); else start=new Date(2000,0,1);
@@ -597,7 +598,7 @@
   function installHooks(){
     const originalSwitchPage=switchPage; switchPage=function(p){originalSwitchPage(p);if(p==='analytics'&&!document.getElementById('readingEvolutionCard')?.dataset.greenTimeline)setTimeout(renderEvolution,0);if(p==='notes')setTimeout(patchNoteSources,0)};
     document.getElementById('noteSearch')?.addEventListener('input',()=>setTimeout(patchNoteSources,0)); document.getElementById('noteBookFilter')?.addEventListener('change',()=>setTimeout(patchNoteSources,0));
-    document.getElementById('mrproFile')?.addEventListener('change',()=>setTimeout(()=>{ensureStateShape();updateSourcePill();if(page==='analytics')renderEvolution()},1500));
+    document.getElementById('mrproFile')?.addEventListener('change',()=>setTimeout(()=>{ensureStateShape();updateSourcePill();if(page==='analytics')(window.yuejiRenderEvolution||renderEvolution)()},1500));
     const notes=document.getElementById('notesList'); if(notes)new MutationObserver(()=>patchNoteSources()).observe(notes,{childList:true,subtree:true});
   }
 
