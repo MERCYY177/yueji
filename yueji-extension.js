@@ -129,7 +129,10 @@
   async function clearSyncSnapshot(){}
   async function commitSyncCheckpoint(options={}){if(options.highlightRows?.length)await persistHighlightRowsOnly(options.highlightRows);await persistSyncIncrement(options);diagnosticStage('step-complete',{phase:state.weRead.syncPhase})}
   async function persistHighlightRowsOnly(rows){if(!rows?.length)return;if(window.yuejiHighlightsReady)await window.yuejiHighlightsReady;if(window.yuejiHighlightsDbReady?.())await window.yuejiPutHighlights(rows);else state.highlights.push(...rows.filter(x=>!state.highlights.some(y=>y.id===x.id)))}
-  async function recoverSyncSnapshot(){let rows=[];try{rows=await syncDbRequest(store=>store.getAll())||[]}catch(error){console.warn('微信同步数据库读取失败',error);return false}if(!rows.length)return false;const meta=rows.find(x=>x.id==='meta'),shelf=rows.find(x=>x.id==='shelf');if(meta?.weRead)state.weRead={...state.weRead,...meta.weRead,syncState:meta.weRead.syncState==='running'?'paused':meta.weRead.syncState};if(shelf?.value)state.weRead.shelfBooks=shelf.value;const byId=new Map(state.books.filter(b=>b.weReadBookId).map(b=>[String(b.weReadBookId),b])),byKey=new Map(state.books.map(b=>[String(b.key),b]));for(const row of rows){if(row.kind!=='book'||!row.value)continue;const incoming=row.value,found=incoming.weReadBookId?byId.get(String(incoming.weReadBookId)):byKey.get(String(incoming.key));if(found)Object.assign(found,incoming);else state.books.push(incoming)}const savedSessions=rows.filter(x=>x.kind==='session'&&x.value).map(x=>x.value),sessionIds=new Set(savedSessions.map(x=>x.id));state.sessions=state.sessions.filter(s=>s.source!=='weread'||!sessionIds.has(s.id)).concat(savedSessions);state.weRead.daily={};savedSessions.forEach(s=>{if(s.date)state.weRead.daily[s.date]=n(s.seconds)||n(s.minutes)*60});rebuildBookIndexes();return true}
+  async function recoverSyncSnapshot(){let rows=[];try{rows=await syncDbRequest(store=>store.getAll())||[]}catch(error){console.warn('微信同步数据库读取失败',error);return false}if(!rows.length)return false;const hidden=new Set((state.hiddenWeReadBookIds||[]).map(String)),meta=rows.find(x=>x.id==='meta'),shelf=rows.find(x=>x.id==='shelf');if(meta?.weRead)state.weRead={...state.weRead,...meta.weRead,syncState:meta.weRead.syncState==='running'?'paused':meta.weRead.syncState};if(shelf?.value)state.weRead.shelfBooks=shelf.value.filter(b=>!hidden.has(String(b?.bookId||'')));const byId=new Map(state.books.filter(b=>b.weReadBookId).map(b=>[String(b.weReadBookId),b])),byKey=new Map(state.books.map(b=>[String(b.key),b]));for(const row of rows){if(row.kind!=='book'||!row.value)continue;const incoming=row.value;if(incoming.weReadBookId&&hidden.has(String(incoming.weReadBookId)))continue;const found=incoming.weReadBookId?byId.get(String(incoming.weReadBookId)):byKey.get(String(incoming.key));if(found)Object.assign(found,incoming);else state.books.push(incoming)}const savedSessions=rows.filter(x=>x.kind==='session'&&x.value).map(x=>x.value),sessionIds=new Set(savedSessions.map(x=>x.id));state.sessions=state.sessions.filter(s=>s.source!=='weread'||!sessionIds.has(s.id)).concat(savedSessions);state.weRead.daily={};savedSessions.forEach(s=>{if(s.date)state.weRead.daily[s.date]=n(s.seconds)||n(s.minutes)*60});rebuildBookIndexes();return true}
+
+  async function deleteSyncBook(bookId){const id=String(bookId||'');if(!id)return;const db=await syncDb();try{const tx=db.transaction(SYNC_STORE,'readwrite'),store=tx.objectStore(SYNC_STORE),shelfReq=store.get('shelf');shelfReq.onsuccess=()=>{const row=shelfReq.result;if(row?.value){row.value=row.value.filter(b=>String(b?.bookId||'')!==id);store.put(row)}};store.delete(`book:${id}`);await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)})}finally{db.close()}}
+  window.yuejiDeleteWeReadSyncBook=deleteSyncBook;
 
   window.yuejiCompactExternalState=value=>{const books=(value.books||[]).flatMap(b=>{const sources=(b.sources||[]).filter(x=>x!=='weread');if(!sources.length)return[];const copy={...b,sources};delete copy.weReadBookId;delete copy.weReadSeconds;delete copy.weReadLastRead;delete copy.weReadCover;delete copy.readUpdateTime;delete copy.finishReading;return[copy]}),weRead=value.weRead?compactLocalWeReadMeta({weRead:value.weRead}):undefined;return{...value,books,sessions:(value.sessions||[]).filter(s=>s.source!=='weread'),weRead}}
   window.yuejiPersistExternalState=replaceSyncArchive;
@@ -301,7 +304,7 @@
       if((i+1)%25===0){setWeReadStatus(`正在分批导入书架 ${i+1}/${books.length}……`);await yieldToBrowser()}
     }
     const daily=data.daily||data.readDays||data.readdata?.daily;if(daily&&typeof daily==='object'&&!Array.isArray(daily))replaceWeReadDaily(daily);
-    state.weRead.lastSync=Date.now();state.weRead.shelfTotal=imported;state.weRead.statsDays=Object.keys(state.weRead.daily||{}).length;state.weRead.syncState='base-complete';state.source=state.books.some(b=>b.sources?.includes('moon'))?'多源阅读档案':'微信读书';await saveCheckpoint();await window.yuejiRequestPersistentStorage?.();renderAllSafe();updateSourcePill();updateWeReadStatus(`已从 JSON 导入 ${imported} 本书`);toast('微信读书 JSON 已导入');
+    state.weRead.shelfBooks=books.filter(b=>!hiddenBookIds.has(String(b?.bookId||''))).map(compactShelfBook);state.weRead.lastSync=Date.now();state.weRead.shelfTotal=imported;state.weRead.statsDays=Object.keys(state.weRead.daily||{}).length;state.weRead.syncState='base-complete';state.source=state.books.some(b=>b.sources?.includes('moon'))?'多源阅读档案':'微信读书';await persistSyncIncrement({books:state.books.filter(b=>b.sources?.includes('weread')),sessions:state.sessions.filter(s=>s.source==='weread'),includeShelf:true});await saveCheckpoint();await window.yuejiRequestPersistentStorage?.();renderAllSafe();updateSourcePill();updateWeReadStatus(`已从 JSON 导入 ${imported} 本书`);toast('微信读书 JSON 已导入');
   }
 
   function setWeReadStatus(text, isError = false) {
@@ -399,7 +402,7 @@
     let existing = bookId ? bookByWeReadId.get(bookId) : null;
     if (!existing && title) {
       const nt = normalizeText(title), na = normalizeAuthor(author);
-      existing = bookByIdentity.get(`${nt}|${na}`) || (booksByTitle.get(nt)||[]).find(b=>!na||!normalizeAuthor(b.author)||normalizeAuthor(b.author)===na);
+      existing = bookByIdentity.get(`${nt}|${na}`) || (na?(booksByTitle.get(nt)||[]).find(b=>!normalizeAuthor(b.author)||normalizeAuthor(b.author)===na):null);
     }
     if (!existing) {
       existing = { key:`wr:${bookId || Date.now()}:${Math.random().toString(36).slice(2,7)}`, title:title || '未命名书籍', author, category:raw.category || '未分类', progress:n(progress?.book?.progress), status:n(progress?.book?.progress)>=100 || raw.finishReading===1 ? 'done' : n(progress?.book?.progress)>0 ? 'reading' : 'unread', minutes:0, words:0, color:palette[state.books.length % palette.length], sources:['weread'] };
@@ -418,13 +421,14 @@
     const p = n(progress?.book?.progress);
     if (p || progress?.book?.isStartReading) {
       existing.weReadProgress = p;
-      if (!existing.manualProgress) existing.progress = Math.max(n(existing.progress), p);
+      if (existing.progressSource!=='manual'&&!existing.manualProgress) existing.progress = Math.max(n(existing.progress), p);
       existing.status = p >= 100 ? 'done' : p > 0 ? 'reading' : existing.status;
     }
     const sec = n(progress?.book?.recordReadingTime);
     if (sec > 0) existing.weReadSeconds = sec;
     const updateTime = progress?.book?.updateTime || raw.readUpdateTime;
     if (updateTime) existing.weReadLastRead = safeDate(updateTime);
+    if(progress?.book){const snapshot={date:todayKey,progress:p,seconds:sec,updateTime:n(updateTime)};const rows=Array.isArray(existing.weReadSnapshots)?existing.weReadSnapshots.filter(x=>x?.date!==todayKey):[];rows.push(snapshot);existing.weReadSnapshots=rows.sort((a,b)=>String(a.date).localeCompare(String(b.date))).slice(-120)}
     const finishTime = progress?.book?.finishTime;
     if (finishTime && !existing.finishedDate) existing.finishedDate = safeDate(finishTime);
     return existing;
@@ -454,7 +458,7 @@
     const shelf = await wereadCall('/shelf/sync', {}, ctx);
     const seen = new Set();
     const books = (Array.isArray(shelf.books) ? shelf.books : []).filter(b=>{
-      const id=String(b?.bookId||''); if(!id||seen.has(id))return false; seen.add(id); return true;
+      const id=String(b?.bookId||''); if(!id||seen.has(id)||hiddenBookIds.has(id))return false; seen.add(id); return true;
     });
     for(let i=0;i<books.length;i++){
       assertSyncActive(ctx); mergeBookFromWeRead(books[i]);
@@ -596,7 +600,7 @@
 
   function autoSyncIfNeeded(){const key=localStorage.getItem(EXT_KEY);if(!key||state.weRead.autoRetryBlocked||document.visibilityState!=='visible'||!navigator.onLine)return;if(Date.now()-n(state.weRead.lastSync)<AUTO_SYNC_MS)return;setWeReadStatus('微信读书数据可以更新。为避免手机自动卡顿，请在方便时点击“同步基础数据”。')}
 
-  window.__yuejiWeReadDiagnostics={inferSyncPhase,syncWeRead,stopActiveSync,replaceWeReadMonth,ensureStateShape,stageSyncSnapshot,persistSyncIncrement,recoverSyncSnapshot};
+  window.__yuejiWeReadDiagnostics={inferSyncPhase,syncWeRead,stopActiveSync,replaceWeReadMonth,ensureStateShape,stageSyncSnapshot,persistSyncIncrement,recoverSyncSnapshot,mergeBookFromWeRead,deleteSyncBook};
   async function init(){ensureStateShape();let recovered=await recoverSyncSnapshot();if(!recovered&&(state.books.some(b=>b.sources?.includes('weread'))||state.sessions.some(s=>s.source==='weread'))){diagnosticStage('legacy-migration-start');try{await replaceSyncArchive(state);diagnosticStage('legacy-migration-complete');recovered=true}catch(error){console.warn('旧微信数据迁移失败，原数据仍保留',error)}}injectStyles();injectSettings();injectEvolution();installHooks();updateSourcePill();patchNoteSources();if(recovered){renderAllSafe();updateWeReadStatus('微信读书数据已从独立数据库恢复。')}const schedule=()=>autoSyncIfNeeded();if(globalThis.requestIdleCallback)requestIdleCallback(schedule,{timeout:15000});else setTimeout(schedule,10000)}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();
