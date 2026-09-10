@@ -31,6 +31,13 @@ assert.match(extension,/weReadSnapshots/,'WeRead progress snapshots must be reta
 assert.match(extension,/firstDetailedActivity=!hasVerifiedSnapshot&&started&&!!detailDate/,'first detailed progress with a valid timestamp must create verified activity');
 assert.match(extension,/weReadShelfReadUpdate = safeDate\(raw\.readUpdateTime\)/,'shelf metadata must be stored separately from detailed activity evidence');
 assert.doesNotMatch(extension,/progress\?\.book\?\.updateTime \|\| raw\.readUpdateTime/,'detail and shelf timestamps must never be collapsed into one activity timestamp');
+assert.match(extension,/wereadProgressRefreshBtn/,'users must be able to restart only the per-book circle evidence stage');
+assert.match(extension,/微信圆圈/,'sync status must expose how many books currently have verified circles');
+assert.match(extension,/phase===['"]progress['"]&&page===['"]analytics['"]\)\{renderAnalytics\(\);window\.yuejiRenderEvolution/,'a circle checkpoint must refresh only analytics instead of redrawing the entire application');
+assert.match(extension,/yuejiPersistMergedWeReadBook=persistMergedWeReadBook/,'confirmed merging must use targeted WeRead persistence');
+const mergePersistence=extension.match(/async function persistMergedWeReadBook[\s\S]*?\n  async function replaceSyncArchive/)?.[0]||'';
+assert.ok(mergePersistence,'targeted merge persistence must be independently inspectable');
+assert.doesNotMatch(mergePersistence,/\.clear\(/,'merging one book must never clear the complete WeRead database');
 assert.match(features,/yuejiDeleteWeReadSyncBook/,'full deletion must remove the WeRead IndexedDB record');
 assert.match(features,/疑似重复书籍组/,'diagnostics must report possible duplicate books');
 assert.match(features,/孤立阅读记录/,'diagnostics must report orphan reading sessions');

@@ -55,6 +55,13 @@ assert.match(features,/function isMergeCandidate/,'confirmed merge must be guard
 assert.match(features,/at\.length>=2&&at===bt&&\(!aa\|\|!ba\|\|aa===ba\)/,'merge candidates must have the same normalized title and compatible authors');
 assert.match(features,/这两条记录不像同一本书，已阻止合并/,'unsafe merge attempts must be blocked with a clear explanation');
 assert.match(features,/mergeBooksShortcut/,'library must expose a visible shortcut to the merge manager');
+const mergeHandler=features.match(/async function runMerge[\s\S]*?function updateDuplicateBooks/)?.[0]||'';
+assert.doesNotMatch(mergeHandler,/renderAll\(/,'confirmed merge must not redraw every page while the settings sheet is open');
+assert.doesNotMatch(features,/scrollIntoView/,'the merge shortcut must not move the document scroll position on mobile Firefox');
+assert.match(features,/scrollSettingsTo/,'merge navigation must scroll only inside the settings sheet');
+const confirmedMerge=app.match(/async function mergeConfirmedBookPair[\s\S]*?return combined}/)?.[0]||'';
+assert.match(confirmedMerge,/yuejiPersistMergedWeReadBook/,'confirmed merging must persist only the affected WeRead book');
+assert.doesNotMatch(confirmedMerge,/yuejiPersistMergedWeReadState/,'confirmed merging must not clear and rewrite the entire WeRead archive');
 assert.match(app,/window\.yuejiRenderEvolution\?\.\(\)/,'state refreshes must use the corrected evolution renderer');
 assert.match(extension,/window\.yuejiRenderEvolution\|\|renderEvolution/,'Moon imports must not overwrite the corrected chart with the legacy renderer');
 assert.match(extension,/function renderEvolution\(\)\{\s*if\(window\.yuejiRenderEvolution\)return window\.yuejiRenderEvolution\(\)/,'every legacy render call must forward to the corrected renderer once it is available');
