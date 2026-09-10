@@ -17,20 +17,19 @@ const state={books:[
 const context={state,Map,Set,String,Number,Object,Array,Math,canonicalFile:value=>String(value||'').replace(/\\/g,'/').split('/').pop().toLowerCase()};
 vm.runInNewContext(`${app.slice(start,end)};globalThis.result=reconcileCrossSourceBooksInMemory()`,context);
 assert.equal(context.result.changed,true);
-assert.equal(state.books.length,2,'two cross-source pairs must become two logical books');
-assert.deepEqual([...state.books[0].sources].sort(),['moon','weread']);
-assert.equal(state.books[0].key,'moon:crime','Moon key remains canonical so local cover references stay valid');
-assert.equal(state.sessions[0].bookKey,'moon:crime','sessions must follow the canonical book');
-assert.equal(state.journals['2026-09-03'].bookKey,'moon:crime','journals must follow the canonical book');
-assert.equal(state.highlights[0].bookKey,'moon:art','legacy in-memory highlights must follow the canonical book');
-assert.equal(state.books.filter(book=>book.title==='艺术的故事').length,1,'path aliases for the same Moon Reader file must not survive as duplicate books');
+assert.equal(state.books.length,4,'automatic reconciliation must remove only same-source importer duplicates');
+assert.equal(state.books.some(book=>book.sources.includes('moon')&&book.sources.includes('weread')),false,'cross-source books must remain separate until the user confirms');
+assert.equal(state.sessions[0].bookKey,'wr:1','WeRead sessions must not be silently moved to Moon Reader');
+assert.equal(state.journals['2026-09-03'].bookKey,'wr:1','journals must not be silently moved across sources');
+assert.equal(state.highlights[0].bookKey,'wr:2','WeRead highlights must not be silently moved across sources');
+assert.equal(state.books.filter(book=>book.title==='艺术的故事'&&book.sources.includes('moon')).length,1,'path aliases for the same Moon Reader file must not survive as duplicate books');
 
 const core=fs.readFileSync(new URL('../yueji-fix-core.js',import.meta.url),'utf8'),itemStart=core.indexOf('function weReadTrack'),itemEnd=core.indexOf('function render()',itemStart);
 Object.assign(context,{window:{yuejiVerifiedWeReadActivityDates:book=>book.weReadBookId?[book.weReadBookId==='1'?'2026-09-06':'2026-09-07']:[]},N:value=>Number(value)||0,noteCountFor:()=>0,dateKey:date=>date.toISOString().slice(0,10),Date});
 vm.runInNewContext(`${core.slice(itemStart,itemEnd)};globalThis.moonNodes=buildEvolutionItems('moon');globalThis.weReadNodes=buildEvolutionItems('weread');globalThis.allNodes=buildEvolutionItems('all')`,context);
-assert.equal(context.moonNodes.length,2,'two logical Moon books must render as exactly two Moon nodes');
-assert.equal(context.weReadNodes.length,2,'the same two logical books must render as exactly two verified WeRead nodes');
-assert.equal(context.allNodes.length,2,'the combined view must render each merged logical book exactly once');
+assert.equal(context.moonNodes.length,2,'two Moon books must render as exactly two Moon nodes');
+assert.equal(context.weReadNodes.length,2,'two separate WeRead books must render as exactly two verified WeRead nodes');
+assert.equal(context.allNodes.length,4,'unconfirmed cross-source books must stay separate in the combined view');
 
 const cover=fs.readFileSync(new URL('../yueji-book-cover.js',import.meta.url),'utf8');
 assert.equal(/renderYearCalendar\s*=/.test(cover),false,'late-loaded cover script must not replace the year renderer');
