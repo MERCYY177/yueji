@@ -7,7 +7,7 @@ const memory=new Map([['yueji-weread-key','test-skill-key-1234567890']]);
 const localStorage={getItem:key=>memory.has(key)?memory.get(key):null,setItem:(key,value)=>memory.set(key,String(value)),removeItem:key=>memory.delete(key)};
 const idbRows=new Map();let idbCreated=false;
 function idbOperation(tx,action){const req={result:undefined};setTimeout(()=>{try{req.result=action();req.onsuccess?.();setTimeout(()=>tx.oncomplete?.(),0)}catch(error){req.error=error;req.onerror?.();tx.onerror?.()}},0);return req}
-const idbDatabase={objectStoreNames:{contains:name=>idbCreated&&name==='records'},createObjectStore(){idbCreated=true;return{}},deleteObjectStore(){},transaction(){const tx={};tx.objectStore=()=>({put:row=>idbOperation(tx,()=>{idbRows.set(row.id,structuredClone(row));return row.id}),get:id=>idbOperation(tx,()=>structuredClone(idbRows.get(id))),getAll:()=>idbOperation(tx,()=>structuredClone([...idbRows.values()])),delete:id=>idbOperation(tx,()=>idbRows.delete(id))});return tx},close(){}};
+const idbDatabase={objectStoreNames:{contains:name=>idbCreated&&name==='records'},createObjectStore(){idbCreated=true;return{}},deleteObjectStore(){},transaction(){const tx={};tx.objectStore=()=>({put:row=>idbOperation(tx,()=>{idbRows.set(row.id,structuredClone(row));return row.id}),get:id=>idbOperation(tx,()=>structuredClone(idbRows.get(id))),getAll:()=>idbOperation(tx,()=>structuredClone([...idbRows.values()])),delete:id=>idbOperation(tx,()=>idbRows.delete(id)),clear:()=>idbOperation(tx,()=>idbRows.clear())});return tx},close(){}};
 const indexedDB={open(){const req={result:idbDatabase};setTimeout(()=>{if(!idbCreated)req.onupgradeneeded?.();req.onsuccess?.()},0);return req}};
 const state={source:'',accent:'#5f8f7b',books:[],sessions:[],highlights:[],journals:{},weRead:{syncPhase:'verify',daily:{},reviewCursors:{},shelfBooks:[],notebooks:[]}};
 let requestCount=0,saveCount=0,pauseNext=false,largeNext=false,mediumNext=false;
@@ -89,6 +89,18 @@ api.mergeBookFromWeRead({bookId:'book-1',title:'测试书',author:'作者'},{boo
 assert.equal(state.books.length,1,'continuing sync after a cross-source merge must not recreate a WeRead duplicate');
 assert.equal(state.books[0].key,'moon:test-book','sync index must point to the merged canonical book without requiring a reload');
 assert.equal(state.books[0].weReadProgress,44,'continued sync must update the merged canonical book');
+
+// A pre-merge WeRead cache must not overwrite the Moon canonical key or revive a duplicate after reload.
+idbRows.set('book:book-1',{id:'book:book-1',kind:'book',value:{key:'wr:old-book-1',weReadBookId:'book-1',title:'测试书',author:'作者',sources:['weread'],weReadProgress:45,weReadSnapshots:[{date:'2026-09-10',progress:45,activity:true}]}});
+idbRows.set('session:weread-day:old',{id:'session:weread-day:old',kind:'session',value:{id:'weread-day:old',date:'2026-09-10',bookKey:'wr:old-book-1',source:'weread',minutes:10}});
+await api.recoverSyncSnapshot();
+assert.equal(state.books.length,1,'cached pre-merge WeRead row must not revive a second logical book');
+assert.equal(state.books[0].key,'moon:test-book','cache recovery must preserve the Moon canonical key');
+assert.deepEqual([...state.books[0].sources].sort(),['moon','weread'],'cache recovery must preserve both source memberships');
+assert.equal(state.sessions.find(row=>row.id==='weread-day:old').bookKey,'moon:test-book','cached WeRead evidence must be remapped to the canonical book');
+await context.yuejiPersistMergedWeReadState();
+assert.equal([...idbRows.values()].filter(row=>row.kind==='book').length,1,'full merged persistence must remove stale book rows');
+assert.equal(idbRows.get('book:book-1').value.key,'moon:test-book','the durable WeRead row must store the canonical key');
 
 state.hiddenWeReadBookIds=['book-1'];state.books=[];
 await api.recoverSyncSnapshot();

@@ -118,18 +118,11 @@ function buildCurve(a,b){
   return `M ${a.x.toFixed(1)} ${a.y.toFixed(1)} C ${c1x.toFixed(1)} ${a.y.toFixed(1)}, ${c2x.toFixed(1)} ${b.y.toFixed(1)}, ${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
 }
 
-function traceDate(value){
-  if(/^\d{4}-\d{2}-\d{2}$/.test(String(value||'')))return String(value);
-  const n=Number(value);if(!Number.isFinite(n)||n<=0)return'';
-  const d=new Date(n<1e12?n*1000:n);return Number.isNaN(d.getTime())?'':dateKey(d);
-}
-
 function weReadTrack(b){
   if(!(b.sources||[]).includes('weread'))return{dates:[],latest:'',quality:'none'};
   const verified=[...new Set(window.yuejiVerifiedWeReadActivityDates?.(b)||[])].filter(Boolean).sort();
-  const approximate=[b.weReadLastRead,b.weReadShelfReadUpdate,b.readUpdateTime].map(traceDate).filter(Boolean);
-  const dates=[...new Set([...verified,...approximate])].sort(),latest=dates.at(-1)||'';
-  return{dates,latest,quality:verified.includes(latest)?'verified-change':'recent-activity'};
+  const dates=verified,latest=dates.at(-1)||'';
+  return{dates,latest,quality:latest?'verified-change':'none'};
 }
 
 function buildEvolutionItems(source){
@@ -233,7 +226,7 @@ function render(){
       tip.style.left=`${Math.min(rect.width-250,Math.max(8,e.clientX-rect.left+12))}px`;
       tip.style.top=`${Math.max(8,e.clientY-rect.top-8)}px`;
       const sources=(p.b.sources||[]).map(SL).filter(Boolean).join(' · ')||'未标记来源';
-      const quality=p.evidenceQuality==='recent-activity'?'最近活动时间（不等于当天精确阅读）':p.evidenceQuality==='verified-change'?'同步确认进度或时长发生变化':p.evidenceQuality==='exact-session'?'逐日阅读记录':p.evidenceQuality==='mixed'?'多个来源在同一天留下记录':'手动记录';
+      const quality=p.evidenceQuality==='verified-change'?'同步确认进度或时长发生变化':p.evidenceQuality==='exact-session'?'逐日阅读记录':p.evidenceQuality==='mixed'?'多个来源在同一天留下记录':'手动记录';
       tip.innerHTML=`<b>${ex(p.b.title||'未命名')}</b>${ex(p.date)}<br>这颗圆属于：${ex(p.evidenceSource==='mixed'?'微信读书 + 静读天下':SL(p.evidenceSource))}<br>日期性质：${ex(quality)}<br>${p.mins>0?`档案累计阅读约 ${Math.round(p.mins)} 分钟<br>`:''}书籍档案来源：${ex(sources)}${p.notes?`<br>书摘 / 感悟 ${p.notes} 条`:''}`;
     };
     el.onmouseenter=show;el.onmousemove=show;el.onmouseleave=()=>tip.style.display='none';
