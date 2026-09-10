@@ -28,6 +28,11 @@ assert.match(features,/if\(scale<\.5\)throw new Error\('LONG_PREVIEW_SVG'\)/,'ve
 assert.match(features,/避免手机生成超大 PNG 时卡死/,'mobile users must be told when a long export uses the safe vector fallback');
 assert.match(features,/PREVIEW_CANCELLED/,'closing a long mobile preview must cancel incremental preparation work');
 assert.match(features,/i%20===0/,'long exports must yield regularly instead of monopolizing the mobile main thread');
-assert.equal((html.match(/20260910-p2-v1/g)||[]).length,4,'all runtime scripts must use the same fresh P2 cache key');
+assert.match(features,/card\.id!==['"]monthCalendarWrap['"]/,'month calendar exports must use their own compact layout');
+assert.match(features,/aspect-ratio['"],['"]1\.12 \/ 1['"]/,'exported calendar days must not inherit tall book-cover proportions');
+assert.match(features,/yearReportRenderVersion/,'stale annual report renders must not overwrite a newer mode selection');
+assert.match(features,/await new Promise\(requestAnimationFrame\)/,'annual mode selection must paint before its report work starts');
+assert.match(features,/yearReportCache/,'annual report calculations must be reusable across mode switches');
+assert.equal((html.match(/20260910-p2-v2/g)||[]).length,4,'all runtime scripts must use the same fresh P2 cache key');
 
 console.log('PASS P2 merge control, sync report, evidence explanation and long-export safeguards');
