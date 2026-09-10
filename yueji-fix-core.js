@@ -11,7 +11,7 @@ function datesFor(b,source){
       if(s.bookKey===b.key&&s.date&&s.source!=='weread')out.push(s.date);
     });
   }
-  if((source==='all'||source==='weread')&&b.weReadLastRead)out.push(b.weReadLastRead);
+  if(source==='all'||source==='weread')out.push(...(window.yuejiVerifiedWeReadActivityDates?.(b)||[]));
   if(b.finishedDate)out.push(b.finishedDate);
   return [...new Set(out.filter(Boolean))].sort();
 }
@@ -150,7 +150,7 @@ function render(){
   let items=state.books.map(b=>{
     const local=sessionMap.get(b.key)||{dates:[],minutes:0},ds=[];
     if(source==='all'||source==='moon')ds.push(...local.dates);
-    if((source==='all'||source==='weread')&&b.weReadLastRead)ds.push(b.weReadLastRead);
+    if(source==='all'||source==='weread')ds.push(...(window.yuejiVerifiedWeReadActivityDates?.(b)||[]));
     if(b.finishedDate)ds.push(b.finishedDate);
     const dates=[...new Set(ds.filter(Boolean))].sort(),mins=(source==='all'||source==='weread'?N(b.weReadSeconds)/60:0)+(source==='all'||source==='moon'?(local.minutes||N(b.minutes)):0);
     return {b,dates,date:dates.at(-1)||'',first:dates[0]||'',mins,notes:noteCountFor(b)};

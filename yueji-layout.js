@@ -181,11 +181,10 @@ function installCalendarAnnual(){
   card.id='calendarYearWallCard';
   card.className='year-wall card';
   card.hidden=true;
-  card.innerHTML=`<div class="section-head"><div><div class="section-title">My Year in Books</div><div class="section-sub">按读完月份排列，只收录进度达到 100% 的书；它和上面的年度打卡会同时保留。</div></div><div class="year-wall-actions"><input id="calendarYearWallYear" type="number" min="2000" max="2100"><button class="soft-btn" id="saveCalendarYearWall">保存图片</button></div></div><div id="calendarYearWallPreview" class="year-wall-preview"></div>`;
+  card.innerHTML=`<div class="section-head"><div><div class="section-title">My Year in Books</div><div class="section-sub">跟随上方选择的年份，只收录有真实阅读证据的书；它和年度打卡会同时保留。</div></div><div class="year-wall-actions"><button class="soft-btn" id="saveCalendarYearWall">预览图片</button></div></div><div id="calendarYearWallPreview" class="year-wall-preview"></div>`;
   wrap.insertAdjacentElement('afterend',card);
-  document.getElementById('calendarYearWallYear').onchange=()=>renderCalendarAnnual();
   document.getElementById('saveCalendarYearWall').onclick=()=>{
-    document.getElementById('yearWallYear').value=document.getElementById('calendarYearWallYear').value;
+    document.getElementById('yearWallYear').value=String(calendarDate.getFullYear());
     document.getElementById('saveYearWall').click();
   };
 }
@@ -193,8 +192,6 @@ async function renderCalendarAnnual(){
   const card=document.getElementById('calendarYearWallCard');
   if(!card)return;
   const year=calendarDate.getFullYear();
-  const input=document.getElementById('calendarYearWallYear');
-  input.value=year;
   document.getElementById('yearWallYear').value=year;
   await renderYearWall();
   const preview=document.getElementById('calendarYearWallPreview');

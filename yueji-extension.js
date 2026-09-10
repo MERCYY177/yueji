@@ -428,7 +428,7 @@
     if (sec > 0) existing.weReadSeconds = sec;
     const updateTime = progress?.book?.updateTime || raw.readUpdateTime;
     if (updateTime) existing.weReadLastRead = safeDate(updateTime);
-    if(progress?.book){const snapshot={date:todayKey,progress:p,seconds:sec,updateTime:n(updateTime)};const rows=Array.isArray(existing.weReadSnapshots)?existing.weReadSnapshots.filter(x=>x?.date!==todayKey):[];rows.push(snapshot);existing.weReadSnapshots=rows.sort((a,b)=>String(a.date).localeCompare(String(b.date))).slice(-120)}
+    if(progress?.book){const oldRows=Array.isArray(existing.weReadSnapshots)?existing.weReadSnapshots:[],previous=[...oldRows].sort((a,b)=>String(a.date).localeCompare(String(b.date))).at(-1),changed=!!previous&&(sec>n(previous.seconds)||p>n(previous.progress));const snapshot={date:todayKey,progress:p,seconds:sec,updateTime:n(updateTime),activity:changed||previous?.activity===true};const rows=oldRows.filter(x=>x?.date!==todayKey);rows.push(snapshot);existing.weReadSnapshots=rows.sort((a,b)=>String(a.date).localeCompare(String(b.date))).slice(-120)}
     const finishTime = progress?.book?.finishTime;
     if (finishTime && !existing.finishedDate) existing.finishedDate = safeDate(finishTime);
     return existing;

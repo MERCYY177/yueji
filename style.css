@@ -12,3 +12,5 @@
 .day-source-card{position:absolute;inset:0;display:grid;place-content:center;gap:5px;background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 28%,var(--card)),color-mix(in srgb,var(--accent) 10%,var(--soft)));color:var(--accent)}.day-source-card strong{font-size:1.45rem;line-height:1}.day-source-card i{font-size:.58rem;font-style:normal;font-weight:800}.cover-day>em.source-badge{background:color-mix(in srgb,var(--accent) 88%,#17352c);font-weight:800}@media(max-width:620px){.day-source-card strong{font-size:1rem}.day-source-card i{font-size:.45rem}}
 .wr-diagnostic{display:block;margin-top:9px;color:#a45a4e;font-size:.68rem;overflow-wrap:anywhere}
 .book-source{color:var(--accent)!important;font-size:.66rem!important;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.calendar-year-select{justify-self:center;width:118px;text-align:center;font-family:"Songti SC","STSong",serif;font-size:1rem;font-weight:700;background:var(--card)}
+.calendar-nav .round-btn:disabled{cursor:default;opacity:.28}

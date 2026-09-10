@@ -11,6 +11,21 @@
     return n(book.weReadSeconds)>0 || n(book.weReadProgress)>0 || book.weReadStarted===true || book.weReadStarted===1;
   }
 
+  // A shelf/progress import is only a baseline.  It becomes a dated reading
+  // event after a later snapshot proves that progress or reading time grew.
+  function verifiedWeReadActivityDates(book){
+    const rows=(Array.isArray(book?.weReadSnapshots)?book.weReadSnapshots:[])
+      .filter(x=>/^\d{4}-\d{2}-\d{2}$/.test(String(x?.date||'')))
+      .sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+    const dates=[];
+    for(let i=0;i<rows.length;i++){
+      const row=rows[i],previous=rows[i-1];
+      if(row.activity===true||(previous&&(n(row.seconds)>n(previous.seconds)||n(row.progress)>n(previous.progress))))dates.push(row.date);
+    }
+    return [...new Set(dates)];
+  }
+  window.yuejiVerifiedWeReadActivityDates=verifiedWeReadActivityDates;
+
   function cleanAmbiguousWeReadDates(){
     const st=getState();
     if(!st)return false;
