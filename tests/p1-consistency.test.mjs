@@ -50,10 +50,12 @@ assert.match(core,/evidenceSource/,'each evolution node must carry its own readi
 assert.match(core,/data-evidence-source/,'the rendered node must expose its evidence source for styling and inspection');
 assert.match(core,/window\.yuejiRenderEvolution=render/,'the corrected evolution renderer must be the shared runtime entry point');
 assert.doesNotMatch(features,/h\+Math\.floor\(dataIndex\/levels\.length\)\*16/,'theme depth colors must not drift into a different hue as the book index grows');
-assert.doesNotMatch(features,/mergeSelectedBooks|选择任意两本|手动选择任意两本/,'book merge manager must not allow arbitrary books to be force-merged');
+assert.match(features,/mergeSelectedBooks/,'book merge manager must remain usable when automatic matching finds no candidate');
+assert.match(features,/mergeWeReadBook[\s\S]*mergeMoonBook/,'manual merging must use separate WeRead and Moon Reader selectors');
+assert.match(features,/只能合并一条微信读书记录和一条静读天下记录/,'manual merging must reject same-source and already-merged records');
 assert.match(features,/function isMergeCandidate/,'confirmed merge must be guarded by a same-book candidate check');
 assert.match(features,/at\.length>=2&&at===bt&&\(!aa\|\|!ba\|\|aa===ba\)/,'merge candidates must have the same normalized title and compatible authors');
-assert.match(features,/这两条记录不像同一本书，已阻止合并/,'unsafe merge attempts must be blocked with a clear explanation');
+assert.match(features,/请仅在你确认是同一本书时继续/,'non-exact manual merging must display both records and require explicit confirmation');
 assert.match(features,/mergeBooksShortcut/,'library must expose a visible shortcut to the merge manager');
 const mergeHandler=features.match(/async function runMerge[\s\S]*?function updateDuplicateBooks/)?.[0]||'';
 assert.doesNotMatch(mergeHandler,/renderAll\(/,'confirmed merge must not redraw every page while the settings sheet is open');

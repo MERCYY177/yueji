@@ -22,7 +22,7 @@ const fetch=async(_url,options)=>{
   if(api==='/_list')return json({apis:[]});
   if(api==='/shelf/sync')return json({books:[{bookId:'book-1',title:'测试书',author:'作者',readUpdateTime:Date.now()/1000}]});
   if(api==='/readdata/detail'){const date=new Date(body.baseTime*1000),stamp=Math.floor(new Date(date.getFullYear(),date.getMonth(),2).getTime()/1000);return json({dailyReadTimes:{[stamp]:600}})}
-  if(api==='/book/getprogress')return json({book:{bookId:'book-1',progress:35,isStartReading:1,recordReadingTime:600,updateTime:detailUpdateTime}});
+  if(api==='/book/getprogress')return json({book:{bookId:body.bookId,progress:35,isStartReading:1,recordReadingTime:600,updateTime:detailUpdateTime}});
   if(api==='/user/notebooks')return json({books:[{book:{bookId:'book-1',title:'测试书',author:'作者'},readingProgress:35,sort:10}],hasMore:false});
   if(api==='/book/bookmarklist')return json({updated:[{bookmarkId:'mark-1',markText:'划线内容',createTime:Date.now()/1000}]});
   if(api==='/review/list/mine')return json({reviews:[{review:{reviewId:'review-1',content:'想法内容',abstract:'摘录',createTime:Date.now()/1000}}],hasMore:false});
@@ -120,13 +120,17 @@ state.hiddenWeReadBookIds=['book-1'];state.books=[];
 await api.recoverSyncSnapshot();
 assert.equal(state.books.some(book=>book.weReadBookId==='book-1'),false,'hidden WeRead books must not reappear during IndexedDB recovery');
 state.hiddenWeReadBookIds=[];
+state.books=[];state.weRead.shelfBooks=[{bookId:'old-book',title:'旧书',readUpdateTime:100},{bookId:'recent-book',title:'最近阅读',readUpdateTime:200}];state.weRead.syncPhase='progress';state.weRead.progressCursor=0;state.weRead.progressDone=false;
+await oneStep('recent-progress-first');
+assert.equal(state.weRead.progressLastResult.bookId,'recent-book','circle evidence must query the most recently read shelf book first');
+assert.equal(idbRows.has('book:recent-book'),true,'the exact sorted book queried for circle evidence must be persisted');
 const bulkBooks=Array.from({length:500},(_,i)=>({key:`wr:bulk-${i}`,weReadBookId:`bulk-${i}`,title:`压力书籍 ${i}`,sources:['weread']}));
 const bulkSessions=Array.from({length:5000},(_,i)=>({id:`weread-day:stress-${i}`,date:`2026-${pad(i%12+1)}-${pad(i%28+1)}`,bookKey:'',minutes:1,seconds:60,source:'weread',aggregate:true}));
-const savesBeforeBulk=saveCount;
+const savesBeforeBulk=saveCount,bookRowsBeforeBulk=[...idbRows.values()].filter(row=>row.kind==='book').length;
 await api.persistSyncIncrement({books:bulkBooks,sessions:bulkSessions});
 await new Promise(resolve=>setTimeout(resolve,25));
 assert.equal(saveCount,savesBeforeBulk,'large incremental writes must not invoke full localStorage serialization');
-assert.equal([...idbRows.values()].filter(row=>row.kind==='book').length,501,'500 additional books must be stored as independent records');
+assert.equal([...idbRows.values()].filter(row=>row.kind==='book').length,bookRowsBeforeBulk+500,'500 additional books must be stored as independent records');
 assert.equal([...idbRows.values()].filter(row=>row.kind==='session'&&String(row.id).startsWith('session:weread-day:stress-')).length,5000,'5000 sessions must be stored as independent records');
 
 await api.deleteSyncBook('book-1');

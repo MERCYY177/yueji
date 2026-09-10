@@ -33,6 +33,10 @@ assert.match(extension,/weReadShelfReadUpdate = safeDate\(raw\.readUpdateTime\)/
 assert.doesNotMatch(extension,/progress\?\.book\?\.updateTime \|\| raw\.readUpdateTime/,'detail and shelf timestamps must never be collapsed into one activity timestamp');
 assert.match(extension,/wereadProgressRefreshBtn/,'users must be able to restart only the per-book circle evidence stage');
 assert.match(extension,/微信圆圈/,'sync status must expose how many books currently have verified circles');
+assert.match(extension,/n\(b\.readUpdateTime\)-n\(a\.readUpdateTime\)/,'circle evidence must query the most recently read books first');
+assert.match(extension,/最近读取：《/,'circle sync must show which book was queried and why it did or did not create a circle');
+assert.match(extension,/return \{done,completed:start\+completed,total:started\.length,changedBooks\}/,'the sorted progress batch must return the exact books it changed');
+assert.match(extension,/changedBooks=progress\.changedBooks\|\|\[\]/,'the checkpoint must persist the sorted book actually queried, not the original shelf index');
 assert.match(extension,/phase===['"]progress['"]&&page===['"]analytics['"]\)\{renderAnalytics\(\);window\.yuejiRenderEvolution/,'a circle checkpoint must refresh only analytics instead of redrawing the entire application');
 assert.match(extension,/yuejiPersistMergedWeReadBook=persistMergedWeReadBook/,'confirmed merging must use targeted WeRead persistence');
 const mergePersistence=extension.match(/async function persistMergedWeReadBook[\s\S]*?\n  async function replaceSyncArchive/)?.[0]||'';
