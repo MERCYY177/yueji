@@ -567,6 +567,7 @@
   function actualDateForBook(b,sourceFilter){
     const dates=[]; if(sourceFilter==='all'||sourceFilter==='moon')state.sessions.forEach(s=>{if(s.bookKey===b.key&&s.date&&s.source==='moon')dates.push(s.date)});
     if(sourceFilter==='all'||sourceFilter==='weread')(window.yuejiVerifiedWeReadActivityDates?.(b)||[]).forEach(date=>dates.push(date));
+    if(sourceFilter==='all'||sourceFilter==='weread'){const trace=b.weReadLastRead||b.weReadShelfReadUpdate;if(trace)dates.push(trace)}
     if(sourceFilter==='all')Object.values(state.journals||{}).forEach(j=>{if(j?.read&&j.bookKey===b.key&&j.date)dates.push(j.date)});
     if(sourceFilter==='all'&&b.finishedDate)dates.push(b.finishedDate); dates.sort(); return dates[dates.length-1]||'';
   }

@@ -86,6 +86,7 @@ function shell(){
       <span class="ring">外圈＝留下过书摘 / 感悟</span>
       <span class="dot">圆点＝一本书</span>
       <span>圆点大小＝真实阅读时长</span>
+      <span>微信最近活动圆＝位置为近似日期，不计入当天打卡</span>
     </div>
   </div>`;
   c.dataset.range='year';
@@ -117,26 +118,42 @@ function buildCurve(a,b){
   return `M ${a.x.toFixed(1)} ${a.y.toFixed(1)} C ${c1x.toFixed(1)} ${a.y.toFixed(1)}, ${c2x.toFixed(1)} ${b.y.toFixed(1)}, ${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
 }
 
+function traceDate(value){
+  if(/^\d{4}-\d{2}-\d{2}$/.test(String(value||'')))return String(value);
+  const n=Number(value);if(!Number.isFinite(n)||n<=0)return'';
+  const d=new Date(n<1e12?n*1000:n);return Number.isNaN(d.getTime())?'':dateKey(d);
+}
+
+function weReadTrack(b){
+  if(!(b.sources||[]).includes('weread'))return{dates:[],latest:'',quality:'none'};
+  const verified=[...new Set(window.yuejiVerifiedWeReadActivityDates?.(b)||[])].filter(Boolean).sort();
+  const approximate=[b.weReadLastRead,b.weReadShelfReadUpdate,b.readUpdateTime].map(traceDate).filter(Boolean);
+  const dates=[...new Set([...verified,...approximate])].sort(),latest=dates.at(-1)||'';
+  return{dates,latest,quality:verified.includes(latest)?'verified-change':'recent-activity'};
+}
+
 function buildEvolutionItems(source){
   const sessionMap=new Map();
   state.sessions.forEach(s=>{if(!s.bookKey||s.source!=='moon')return;const row=sessionMap.get(s.bookKey)||{dates:[],minutes:0};if(s.date)row.dates.push(s.date);row.minutes+=N(s.minutes);sessionMap.set(s.bookKey,row)});
   return state.books.map(b=>{
     const local=sessionMap.get(b.key)||{dates:[],minutes:0};
     const moonDates=[...new Set(local.dates.filter(Boolean))].sort();
-    const wereadDates=[...new Set(window.yuejiVerifiedWeReadActivityDates?.(b)||[])].filter(Boolean).sort();
+    const weread=weReadTrack(b),wereadDates=weread.dates;
     const manualDates=Object.values(state.journals||{}).filter(j=>j?.read&&j.bookKey===b.key&&j.date).map(j=>j.date).sort();
     let dates=[],mins=0,evidenceSource=source;
+    let evidenceQuality='exact-session';
     if(source==='moon'){dates=moonDates;mins=local.minutes}
-    else if(source==='weread'){dates=wereadDates;mins=N(b.weReadSeconds)/60}
+    else if(source==='weread'){dates=wereadDates;mins=N(b.weReadSeconds)/60;evidenceQuality=weread.quality}
     else{
-      const evidence=[...moonDates.map(date=>({date,source:'moon'})),...wereadDates.map(date=>({date,source:'weread'})),...manualDates.map(date=>({date,source:'manual'}))];
+      const evidence=[...moonDates.map(date=>({date,source:'moon',quality:'exact-session'})),...wereadDates.map(date=>({date,source:'weread',quality:date===weread.latest?weread.quality:'verified-change'})),...manualDates.map(date=>({date,source:'manual',quality:'manual'}))];
       if(b.finishedDate)evidence.push({date:b.finishedDate,source:'manual'});
       dates=[...new Set(evidence.map(x=>x.date).filter(Boolean))].sort();
       const latest=dates.at(-1)||'',latestSources=new Set(evidence.filter(x=>x.date===latest).map(x=>x.source));
       evidenceSource=latestSources.size>1?'mixed':[...latestSources][0]||'manual';
+      const latestQuality=new Set(evidence.filter(x=>x.date===latest).map(x=>x.quality));evidenceQuality=latestQuality.size>1?'mixed':[...latestQuality][0]||'manual';
       mins=local.minutes+N(b.weReadSeconds)/60;
     }
-    return {b,dates,date:dates.at(-1)||'',first:dates[0]||'',mins,notes:noteCountFor(b),evidenceSource};
+    return {b,dates,date:dates.at(-1)||'',first:dates[0]||'',mins,notes:noteCountFor(b),evidenceSource,evidenceQuality};
   }).filter(x=>x.date);
 }
 
@@ -202,7 +219,7 @@ function render(){
   const nodes=pos.map((p,i)=>{
     const tone=sourceTone(p),fill=tone==='deep'?'var(--evo-deep)':tone==='main'?'var(--evo-main)':tone==='mid'?'var(--evo-mid)':'var(--evo-soft)';
     const ring=p.notes>0?`<circle cx="${p.x}" cy="${p.y}" r="${(p.r+5).toFixed(1)}" fill="none" stroke="var(--evo-main)" stroke-width="1" opacity=".58"/>`:'';
-    return `<g data-evo-i="${i}" data-evidence-source="${p.evidenceSource}" style="cursor:pointer">${ring}<circle cx="${p.x}" cy="${p.y}" r="${p.r.toFixed(1)}" fill="${fill}" stroke="#f8faf8" stroke-width="1.8" opacity=".93"/></g>`;
+    return `<g data-evo-i="${i}" data-evidence-source="${p.evidenceSource}" data-evidence-quality="${p.evidenceQuality}" style="cursor:pointer">${ring}<circle cx="${p.x}" cy="${p.y}" r="${p.r.toFixed(1)}" fill="${fill}" stroke="#f8faf8" stroke-width="1.8" opacity=".93"/></g>`;
   }).join('');
 
   v.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="阅读演化时间线">${monthGrid}${yearRows}${path}${nodes}</svg><div class="evo-green-tip" id="evolutionTip"></div>`;
@@ -216,7 +233,8 @@ function render(){
       tip.style.left=`${Math.min(rect.width-250,Math.max(8,e.clientX-rect.left+12))}px`;
       tip.style.top=`${Math.max(8,e.clientY-rect.top-8)}px`;
       const sources=(p.b.sources||[]).map(SL).filter(Boolean).join(' · ')||'未标记来源';
-      tip.innerHTML=`<b>${ex(p.b.title||'未命名')}</b>${ex(p.date)}<br>这颗圆的日期证据：${ex(p.evidenceSource==='mixed'?'微信读书 + 静读天下':SL(p.evidenceSource))}<br>${p.mins>0?`真实累计阅读约 ${Math.round(p.mins)} 分钟<br>`:''}书籍档案来源：${ex(sources)}${p.notes?`<br>书摘 / 感悟 ${p.notes} 条`:''}`;
+      const quality=p.evidenceQuality==='recent-activity'?'最近活动时间（不等于当天精确阅读）':p.evidenceQuality==='verified-change'?'同步确认进度或时长发生变化':p.evidenceQuality==='exact-session'?'逐日阅读记录':p.evidenceQuality==='mixed'?'多个来源在同一天留下记录':'手动记录';
+      tip.innerHTML=`<b>${ex(p.b.title||'未命名')}</b>${ex(p.date)}<br>这颗圆属于：${ex(p.evidenceSource==='mixed'?'微信读书 + 静读天下':SL(p.evidenceSource))}<br>日期性质：${ex(quality)}<br>${p.mins>0?`档案累计阅读约 ${Math.round(p.mins)} 分钟<br>`:''}书籍档案来源：${ex(sources)}${p.notes?`<br>书摘 / 感悟 ${p.notes} 条`:''}`;
     };
     el.onmouseenter=show;el.onmousemove=show;el.onmouseleave=()=>tip.style.display='none';
   });
