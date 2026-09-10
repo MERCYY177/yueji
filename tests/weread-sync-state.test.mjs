@@ -77,6 +77,15 @@ assert.equal(recovered,true,'IndexedDB sync records must be detected');
 assert.equal(state.books[0].progress,77,'IndexedDB sync records must restore book changes');
 assert.equal(idbRows.has('book:book-1'),true,'incremental book record must remain durable');
 
+state.books[0].progress=82;state.books[0].progressSource='manual';
+api.mergeBookFromWeRead({bookId:'book-1',title:'测试书',author:'作者'},{book:{progress:12,isStartReading:1}});
+assert.equal(state.books[0].progress,82,'manual progress must not be overwritten by WeRead progress');
+assert.equal(state.books[0].weReadProgress,12,'WeRead progress should still be retained as source data');
+
+state.hiddenWeReadBookIds=['book-1'];state.books=[];
+await api.recoverSyncSnapshot();
+assert.equal(state.books.some(book=>book.weReadBookId==='book-1'),false,'hidden WeRead books must not reappear during IndexedDB recovery');
+state.hiddenWeReadBookIds=[];
 const bulkBooks=Array.from({length:500},(_,i)=>({key:`wr:bulk-${i}`,weReadBookId:`bulk-${i}`,title:`压力书籍 ${i}`,sources:['weread']}));
 const bulkSessions=Array.from({length:5000},(_,i)=>({id:`weread-day:stress-${i}`,date:`2026-${pad(i%12+1)}-${pad(i%28+1)}`,bookKey:'',minutes:1,seconds:60,source:'weread',aggregate:true}));
 const savesBeforeBulk=saveCount;
@@ -86,6 +95,10 @@ assert.equal(saveCount,savesBeforeBulk,'large incremental writes must not invoke
 assert.equal([...idbRows.values()].filter(row=>row.kind==='book').length,501,'500 additional books must be stored as independent records');
 assert.equal([...idbRows.values()].filter(row=>row.kind==='session'&&String(row.id).startsWith('session:weread-day:stress-')).length,5000,'5000 sessions must be stored as independent records');
 
+await api.deleteSyncBook('book-1');
+await new Promise(resolve=>setTimeout(resolve,20));
+assert.equal(idbRows.has('book:book-1'),false,'deleting a WeRead book must remove its independent IndexedDB record');
+assert.equal((idbRows.get('shelf')?.value||[]).some(book=>String(book.bookId)==='book-1'),false,'deleting a WeRead book must also remove it from the cached shelf');
 memory.set('yueji-archive-v1','x'.repeat(4*1024*1024+1));state.weRead.syncPhase='verify';
 const beforeCapacity=requestCount;
 await api.syncWeRead({mode:'continue',manual:false});
