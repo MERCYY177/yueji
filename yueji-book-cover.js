@@ -112,29 +112,6 @@
     openBook=function(key){original(key);setTimeout(()=>refreshPreview(key),0)};
   }
 
-  function fixYearCalendar(){
-    renderYearCalendar=function(){
-      const y=calendarDate.getFullYear(),wrap=$('challengeGrid');wrap.innerHTML='';let count=0;
-      for(let m=0;m<12;m++){
-        const first=new Date(y,m,1).getDay(),last=new Date(y,m+1,0).getDate(),el=document.createElement('div');
-        el.className='month-block';el.innerHTML=`<div class="month-name">${m+1}月</div>`;
-        const grid=document.createElement('div');grid.className='month-days';
-        for(let i=0;i<first;i++){const x=document.createElement('i');x.className='cal-day out';grid.append(x)}
-        for(let n=1;n<=last;n++){
-          const key=dateKey(new Date(y,m,n)),dd=dayData(key),b=document.createElement('button');b.className='cal-day';
-          if(key<state.challengeStart||key>state.challengeEnd)b.classList.add('out');
-          else if(dd.read){b.classList.add('read');count++}
-          if(dd.journal?.thought||dd.journal?.quote)b.classList.add('note');
-          if(key===todayKey)b.classList.add('today');
-          b.title=fmtDate(key);b.onclick=()=>openJournal(key);grid.append(b);
-        }
-        el.append(grid);wrap.append(el);
-      }
-      $('challengeRead').textContent=count;
-    };
-    if(typeof calendarView!=='undefined'&&calendarView==='year')renderCalendarPage();
-  }
-
-  function init(){injectStyles();installEditor();wrapOpenBook();fixYearCalendar()}
+  function init(){injectStyles();installEditor();wrapOpenBook()}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else setTimeout(init,0);
 })();

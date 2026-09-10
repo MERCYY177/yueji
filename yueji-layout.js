@@ -34,7 +34,7 @@ function minsLabel(m){
 function latestDateForBook(b,sessionLatest){
   const dates=[];
   if(sessionLatest?.get(b.key))dates.push(sessionLatest.get(b.key));
-  if(b.weReadLastRead)dates.push(b.weReadLastRead);
+  dates.push(...(window.yuejiVerifiedBookDates?.(b)||[]));
   if(b.finishedDate)dates.push(b.finishedDate);
   return dates.sort().at(-1)||'';
 }
@@ -65,18 +65,18 @@ function installHome(){
 function renderHomeDashboard(){
   if(!document.getElementById('homeDashboard'))return;
   const mk=todayKey.slice(0,7);
-  const ss=state.sessions.filter(s=>s.date?.startsWith(mk));
+  const raw=state.sessions.filter(s=>s.date?.startsWith(mk)),ss=window.yuejiEffectiveSessions?.(raw)||effectiveSessions(raw);
   const mins=ss.reduce((a,s)=>a+(+s.minutes||0),0);
-  const days=new Set(ss.map(s=>s.date));
-  Object.values(state.journals||{}).forEach(j=>{if(j.date?.startsWith(mk)&&j.read)days.add(j.date)});
-  const books=new Set(ss.map(s=>s.bookKey).filter(Boolean));
-  const finished=state.books.filter(b=>String(b.finishedDate||'').startsWith(mk)).length;
+  const days=window.yuejiEffectiveReadDates?.(raw,{prefix:mk})||new Set(ss.map(s=>s.date));
+  const bookKeys=new Set([...raw.map(s=>s.bookKey).filter(Boolean),...(window.yuejiManualBooksInPeriod?.(mk)||[])]);
+  const books=[...bookKeys].filter(key=>{const b=book(key);return b&&!b.hidden}).length;
+  const finished=state.books.filter(b=>!b.hidden&&String(b.finishedDate||'').startsWith(mk)).length;
   document.getElementById('homeMonthGrid').innerHTML=[
-    ['阅读天数',days.size,'天'],['阅读时长',minsLabel(mins),''],['看过',books.size,'本'],['读完',finished,'本']
+    ['阅读天数',days.size,'天'],['阅读时长',minsLabel(mins),''],['看过',books,'本'],['读完',finished,'本']
   ].map(x=>`<div class="home-mini-kpi"><b>${esc(x[1])}</b><span>${x[0]}${x[2]?` · ${x[2]}`:''}</span></div>`).join('');
 
   const sessionLatest=new Map();state.sessions.forEach(s=>{if(s.bookKey&&s.date&&s.date>(sessionLatest.get(s.bookKey)||''))sessionLatest.set(s.bookKey,s.date)});
-  const recent=state.books.map(b=>({b,d:latestDateForBook(b,sessionLatest)})).filter(x=>x.d).sort((a,b)=>b.d.localeCompare(a.d)).slice(0,3);
+  const recent=state.books.filter(b=>!b.hidden).map(b=>({b,d:latestDateForBook(b,sessionLatest)})).filter(x=>x.d).sort((a,b)=>b.d.localeCompare(a.d)).slice(0,3);
   document.getElementById('homeRecentBooks').innerHTML=recent.length?recent.map(({b,d})=>`<button class="home-recent-book" data-home-book="${esc(b.key)}">${bookCoverHtml(b)}<span><b>${esc(b.title||'未命名')}</b><small>${esc(b.author||'')} · ${Math.round(+b.progress||0)}%</small><span class="home-recent-progress"><i style="width:${Math.max(0,Math.min(100,+b.progress||0))}%"></i></span></span></button>`).join(''):'<div class="empty-text">还没有最近阅读记录。</div>';
   document.querySelectorAll('[data-home-book]').forEach(x=>x.onclick=()=>openBook(x.dataset.homeBook));
   hydrateCovers(document.getElementById('homeRecentBooks'));
@@ -139,9 +139,7 @@ function renderLibraryLayout(){
 }
 
 function readDaySet(){
-  const s=new Set(state.sessions.filter(x=>x.date).map(x=>x.date));
-  Object.values(state.journals||{}).forEach(j=>{if(j.date&&j.read)s.add(j.date)});
-  return s;
+  return window.yuejiEffectiveReadDates?.()||new Set(effectiveSessions().map(x=>x.date).filter(Boolean));
 }
 function streakStats(){
   const set=readDaySet(),arr=[...set].sort();let max=0,run=0,prev='';
@@ -152,22 +150,22 @@ function streakStats(){
 }
 function renderOverviewStats(){
   const kpi=document.getElementById('kpiGrid');if(!kpi)return;
-  const total=state.sessions.reduce((a,s)=>a+(+s.minutes||0),0),days=readDaySet(),st=streakStats();
-  const byDay={};state.sessions.forEach(s=>{if(s.date)byDay[s.date]=(byDay[s.date]||0)+(+s.minutes||0)});
+  const rows=window.yuejiEffectiveSessions?.()||effectiveSessions(),total=rows.reduce((a,s)=>a+(+s.minutes||0),0),days=readDaySet(),st=streakStats();
+  const byDay={};rows.forEach(s=>{if(s.date)byDay[s.date]=(byDay[s.date]||0)+(+s.minutes||0)});
   const maxDay=Math.max(0,...Object.values(byDay));
-  const finished=state.books.filter(b=>statusOf(b)==='done').length;
+  const finished=state.books.filter(b=>!b.hidden&&statusOf(b)==='done').length,visibleBooks=state.books.filter(b=>!b.hidden);
   const noteCount=(window.yuejiHighlightCount?.()??(state.highlights||[]).length)+Object.values(state.journals||{}).filter(j=>String(j.quote||'').trim()||String(j.thought||'').trim()).length;
-  const vals=[['藏书',state.books.length,'本'],['读完',finished,'本'],['总阅读时长',minsLabel(total),''],['阅读天数',days.size,'天'],['当前连续',st.current,'天'],['最长连续',st.max,'天'],['单日最高',minsLabel(maxDay),''],['书摘 / 感悟',noteCount,'条']];
+  const vals=[['藏书',visibleBooks.length,'本'],['读完',finished,'本'],['总阅读时长',minsLabel(total),''],['阅读天数',days.size,'天'],['当前连续',st.current,'天'],['最长连续',st.max,'天'],['单日最高',minsLabel(maxDay),''],['书摘 / 感悟',noteCount,'条']];
   kpi.innerHTML=vals.map(x=>`<div class="kpi"><b>${esc(x[1])}</b><span>${x[0]}${x[2]?` · ${x[2]}`:''}</span></div>`).join('');
   renderTimelineMatrix();
 }
 function renderTimelineMatrix(){
   const el=document.getElementById('timelineHeat');if(!el)return;
-  const dates=state.sessions.filter(s=>/^\d{4}-\d{2}-\d{2}$/.test(s.date||'')).map(s=>s.date);
+  const rows=window.yuejiEffectiveSessions?.()||effectiveSessions(),dates=rows.filter(s=>/^\d{4}-\d{2}-\d{2}$/.test(s.date||'')).map(s=>s.date);
   if(!dates.length){el.className='';el.innerHTML='<div class="empty-text">还没有阅读时间数据。</div>';return}
   const minY=Math.min(...dates.map(d=>+d.slice(0,4))),maxY=Math.max(today.getFullYear(),...dates.map(d=>+d.slice(0,4)));
   const years=[];for(let y=minY;y<=maxY;y++)years.push(y);
-  const sums={};state.sessions.forEach(s=>{if(!s.date)return;const k=s.date.slice(0,7);sums[k]=(sums[k]||0)+(+s.minutes||0)});
+  const sums={};rows.forEach(s=>{if(!s.date)return;const k=s.date.slice(0,7);sums[k]=(sums[k]||0)+(+s.minutes||0)});
   const max=Math.max(1,...Object.values(sums));
   el.className='timeline-matrix-wrap';
   el.innerHTML=`<div class="timeline-matrix"><div class="timeline-head-row"><span></span>${Array.from({length:12},(_,i)=>`<span>${i+1}月</span>`).join('')}</div>${years.map(y=>`<div class="timeline-data-row"><b class="timeline-year">${y}</b>${Array.from({length:12},(_,i)=>{const v=sums[`${y}-${pad(i+1)}`]||0,a=v?(.12+.78*v/max):0;return `<i class="timeline-cell" style="${v?`background:rgba(var(--accent-rgb),${a})`:''}" title="${y}年${i+1}月 · ${Math.round(v)} 分钟"></i>`}).join('')}</div>`).join('')}</div>`;

@@ -82,6 +82,14 @@ api.mergeBookFromWeRead({bookId:'book-1',title:'测试书',author:'作者'},{boo
 assert.equal(state.books[0].progress,82,'manual progress must not be overwritten by WeRead progress');
 assert.equal(state.books[0].weReadProgress,12,'WeRead progress should still be retained as source data');
 
+const canonical={...state.books[0],key:'moon:test-book',sources:['moon','weread'],progress:82};
+state.books=[canonical];
+context.yuejiRefreshWeReadBookIndexes();
+api.mergeBookFromWeRead({bookId:'book-1',title:'测试书',author:'作者'},{book:{progress:44,isStartReading:1}});
+assert.equal(state.books.length,1,'continuing sync after a cross-source merge must not recreate a WeRead duplicate');
+assert.equal(state.books[0].key,'moon:test-book','sync index must point to the merged canonical book without requiring a reload');
+assert.equal(state.books[0].weReadProgress,44,'continued sync must update the merged canonical book');
+
 state.hiddenWeReadBookIds=['book-1'];state.books=[];
 await api.recoverSyncSnapshot();
 assert.equal(state.books.some(book=>book.weReadBookId==='book-1'),false,'hidden WeRead books must not reappear during IndexedDB recovery');

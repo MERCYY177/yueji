@@ -403,6 +403,7 @@
     if (!existing && title) {
       const nt = normalizeText(title), na = normalizeAuthor(author);
       existing = bookByIdentity.get(`${nt}|${na}`) || (na?(booksByTitle.get(nt)||[]).find(b=>!normalizeAuthor(b.author)||normalizeAuthor(b.author)===na):null);
+      if(!existing&&typeof window.yuejiCrossSourceMatch==='function')existing=state.books.find(b=>window.yuejiCrossSourceMatch(b,{title,author,isbn:raw.isbn,sources:['weread']}));
     }
     if (!existing) {
       existing = { key:`wr:${bookId || Date.now()}:${Math.random().toString(36).slice(2,7)}`, title:title || '未命名书籍', author, category:raw.category || '未分类', progress:n(progress?.book?.progress), status:n(progress?.book?.progress)>=100 || raw.finishReading===1 ? 'done' : n(progress?.book?.progress)>0 ? 'reading' : 'unread', minutes:0, words:0, color:palette[state.books.length % palette.length], sources:['weread'] };
@@ -565,7 +566,9 @@
   }
   function actualDateForBook(b,sourceFilter){
     const dates=[]; if(sourceFilter==='all'||sourceFilter==='moon')state.sessions.forEach(s=>{if(s.bookKey===b.key&&s.date&&s.source!=='weread')dates.push(s.date)});
-    if((sourceFilter==='all'||sourceFilter==='weread')&&b.weReadLastRead)dates.push(b.weReadLastRead); if(b.finishedDate)dates.push(b.finishedDate); dates.sort(); return dates[dates.length-1]||'';
+    if(sourceFilter==='all'||sourceFilter==='weread')(window.yuejiVerifiedWeReadActivityDates?.(b)||[]).forEach(date=>dates.push(date));
+    if(sourceFilter==='all')Object.values(state.journals||{}).forEach(j=>{if(j?.read&&j.bookKey===b.key&&j.date)dates.push(j.date)});
+    if(b.finishedDate)dates.push(b.finishedDate); dates.sort(); return dates[dates.length-1]||'';
   }
   function escapeXml(s=''){return String(s).replace(/[<>&"']/g,ch=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&apos;'}[ch]))}
 
@@ -601,6 +604,8 @@
   function autoSyncIfNeeded(){const key=localStorage.getItem(EXT_KEY);if(!key||state.weRead.autoRetryBlocked||document.visibilityState!=='visible'||!navigator.onLine)return;if(Date.now()-n(state.weRead.lastSync)<AUTO_SYNC_MS)return;setWeReadStatus('微信读书数据可以更新。为避免手机自动卡顿，请在方便时点击“同步基础数据”。')}
 
   window.__yuejiWeReadDiagnostics={inferSyncPhase,syncWeRead,stopActiveSync,replaceWeReadMonth,ensureStateShape,stageSyncSnapshot,persistSyncIncrement,recoverSyncSnapshot,mergeBookFromWeRead,deleteSyncBook};
-  async function init(){ensureStateShape();let recovered=await recoverSyncSnapshot();if(!recovered&&(state.books.some(b=>b.sources?.includes('weread'))||state.sessions.some(s=>s.source==='weread'))){diagnosticStage('legacy-migration-start');try{await replaceSyncArchive(state);diagnosticStage('legacy-migration-complete');recovered=true}catch(error){console.warn('旧微信数据迁移失败，原数据仍保留',error)}}injectStyles();injectSettings();injectEvolution();installHooks();updateSourcePill();patchNoteSources();if(recovered){renderAllSafe();updateWeReadStatus('微信读书数据已从独立数据库恢复。')}const schedule=()=>autoSyncIfNeeded();if(globalThis.requestIdleCallback)requestIdleCallback(schedule,{timeout:15000});else setTimeout(schedule,10000)}
+  window.yuejiRefreshWeReadBookIndexes=rebuildBookIndexes;
+  window.yuejiPersistMergedWeReadState=()=>persistSyncIncrement({books:state.books.filter(b=>b.sources?.includes('weread')),sessions:state.sessions.filter(s=>s.source==='weread'),includeShelf:true});
+  async function init(){ensureStateShape();let recovered=await recoverSyncSnapshot();if(!recovered&&(state.books.some(b=>b.sources?.includes('weread'))||state.sessions.some(s=>s.source==='weread'))){diagnosticStage('legacy-migration-start');try{await replaceSyncArchive(state);diagnosticStage('legacy-migration-complete');recovered=true}catch(error){console.warn('旧微信数据迁移失败，原数据仍保留',error)}}let reconciled=false;try{if(window.yuejiHighlightsReady)await window.yuejiHighlightsReady;const result=await window.yuejiReconcileCrossSourceBooks?.();reconciled=Boolean(result?.changed);if(reconciled){rebuildBookIndexes();await persistSyncIncrement({books:state.books.filter(b=>b.sources?.includes('weread')),sessions:state.sessions.filter(s=>s.source==='weread'),includeShelf:true})}}catch(error){console.warn('跨平台书籍自动归并失败，原书籍仍保留',error)}injectStyles();injectSettings();injectEvolution();installHooks();updateSourcePill();patchNoteSources();if(recovered||reconciled){renderAllSafe();updateWeReadStatus(reconciled?'已合并微信读书与静读天下中的同一本书。':'微信读书数据已从独立数据库恢复。')}const schedule=()=>autoSyncIfNeeded();if(globalThis.requestIdleCallback)requestIdleCallback(schedule,{timeout:15000});else setTimeout(schedule,10000)}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();
