@@ -30,6 +30,7 @@ assert.match(features,/避免手机生成超大 PNG 时卡死/,'mobile users mus
 assert.match(features,/PREVIEW_CANCELLED/,'closing a long mobile preview must cancel incremental preparation work');
 assert.match(features,/i%20===0/,'long exports must yield regularly instead of monopolizing the mobile main thread');
 assert.match(features,/card\?\.id===['"]monthCalendarWrap['"]\?renderCalendarPng/,'month calendar preview must use its dedicated PNG renderer');
+assert.match(features,/card\.id===['"]monthCalendarWrap['"]\?renderCalendarPng:null/,'the calendar button must explicitly force its dedicated renderer');
 assert.match(features,/renderMonthlyPng/,'monthly reports must use a dedicated PNG renderer');
 assert.match(features,/openModulePreview\(null,[\s\S]*renderMonthlyPng\)/,'the monthly export action must be wired to the dedicated renderer');
 assert.match(features,/function roundedPath/,'canvas exports must not depend on the newer roundRect browser API');
@@ -37,11 +38,16 @@ assert.match(features,/yearReportRenderVersion/,'stale annual report renders mus
 assert.match(features,/yearReportCache/,'annual report calculations must be reusable across mode switches');
 assert.match(features,/ensureYearIndexes/,'annual report indexes must be rebuilt only when data changes');
 assert.match(app,/\(window\.renderYearWall\|\|renderYearWall\)\(\)/,'page changes must use the optimized annual renderer instead of repainting the legacy wall');
+assert.match(app,/window\.yuejiMarkDataRevision=\(\)=>\{sessionDateIndex=null;markDataRevision\(\)\}/,'incremental sync must be able to invalidate date and report caches without a full archive save');
+assert.match(extension,/window\.yuejiMarkDataRevision\?\.\(\)/,'each completed sync step must invalidate live UI caches');
+const layout=fs.readFileSync(new URL('../yueji-layout.js',import.meta.url),'utf8');
+assert.doesNotMatch(layout,/if\(statsTab===['"]year['"]\)renderYearWall\(\)/,'statistics tabs must not call the legacy annual renderer directly');
+assert.match(layout,/if\(statsTab===['"]year['"]\)\(window\.renderYearWall\|\|renderYearWall\)\(\)/,'statistics tabs must route annual rendering through the optimized renderer');
 assert.match(app,/微信进度变化证据/,'monthly reports must include books backed by verified WeRead progress dates');
 assert.match(app,/month-book-cover cover-art/,'monthly reports must render real cover elements');
 assert.match(html,/<title>阅迹<\/title>/,'the initial browser title must be 阅迹');
 assert.match(style,/grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/,'mobile KPI columns must be allowed to shrink without overflowing');
 assert.match(style,/\.library-top-row \.search\{[^}]*min-width:0/,'the mobile search box must be allowed to shrink inside its card');
-assert.equal((html.match(/20260911-p2-v3/g)||[]).length,5,'stylesheet and runtime scripts must share one fresh cache key');
+assert.equal((html.match(/20260911-p2-v4/g)||[]).length,5,'stylesheet and runtime scripts must share one fresh cache key');
 
 console.log('PASS P2 merge control, sync report, evidence explanation and long-export safeguards');

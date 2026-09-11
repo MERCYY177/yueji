@@ -454,7 +454,34 @@
     const detailUpdateTime = progress?.book?.updateTime || progress?.updateTime;
     if (detailUpdateTime) existing.weReadLastRead = safeDate(detailUpdateTime);
     else if (raw.readUpdateTime) existing.weReadShelfReadUpdate = safeDate(raw.readUpdateTime);
-    if(progress?.book){const oldRows=Array.isArray(existing.weReadSnapshots)?existing.weReadSnapshots:[],previous=[...oldRows].sort((a,b)=>String(a.date).localeCompare(String(b.date))).at(-1),detailDate=safeDate(detailUpdateTime),started=sec>0||p>0||progress.book.isStartReading===1||progress.book.isStartReading===true,hasVerifiedSnapshot=oldRows.some(x=>x?.activity===true||String(x?.evidence||'').startsWith('detail-')),firstDetailedActivity=!hasVerifiedSnapshot&&started&&!!detailDate,changed=!!previous&&(sec>n(previous.seconds)||p>n(previous.progress)),snapshotDate=detailDate||(changed?todayKey:(previous?.date||todayKey)),sameDateActivity=previous?.date===snapshotDate&&previous?.activity===true,snapshot={date:snapshotDate,progress:p,seconds:sec,updateTime:n(detailUpdateTime),activity:firstDetailedActivity||changed||sameDateActivity,evidence:firstDetailedActivity?'detail-first':changed?'detail-change':sameDateActivity?(previous.evidence||'detail-preserved'):'baseline'};const rows=oldRows.filter(x=>x?.date!==snapshotDate&&!(firstDetailedActivity&&x?.activity!==true&&!String(x?.evidence||'').startsWith('detail-')));rows.push(snapshot);existing.weReadSnapshots=rows.sort((a,b)=>String(a.date).localeCompare(String(b.date))).slice(-120)}
+    if(progress?.book){
+      const oldRows=Array.isArray(existing.weReadSnapshots)?existing.weReadSnapshots:[];
+      const sorted=[...oldRows].sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+      const previous=sorted.at(-1),detailDate=safeDate(detailUpdateTime);
+      const started=sec>0||p>0||progress.book.isStartReading===1||progress.book.isStartReading===true;
+      const hasVerifiedSnapshot=oldRows.some(x=>x?.activity===true||String(x?.evidence||'').startsWith('detail-'));
+      const firstDetailedActivity=!hasVerifiedSnapshot&&started&&!!detailDate;
+      const directTimestampActivity=started&&!!detailDate;
+      const changed=!!previous&&(sec>n(previous.seconds)||p>n(previous.progress));
+      const snapshotDate=detailDate||(changed?todayKey:(previous?.date||todayKey));
+      const sameDate=oldRows.find(x=>x?.date===snapshotDate);
+      // A later read of the same cumulative progress is only a baseline refresh.
+      // It must never downgrade an already verified activity date and erase its circle.
+      const preserveActivity=sameDate?.activity===true;
+      const activity=directTimestampActivity||changed||preserveActivity;
+      const snapshot={
+        ...sameDate,
+        date:snapshotDate,
+        progress:Math.max(n(sameDate?.progress),p),
+        seconds:Math.max(n(sameDate?.seconds),sec),
+        updateTime:Math.max(n(sameDate?.updateTime),n(detailUpdateTime)),
+        activity,
+        evidence:firstDetailedActivity?'detail-first':directTimestampActivity?(sameDate?.evidence||'detail-timestamp'):changed?'detail-change':preserveActivity?(sameDate.evidence||'detail-preserved'):'baseline'
+      };
+      const rows=oldRows.filter(x=>x?.date!==snapshotDate);
+      rows.push(snapshot);
+      existing.weReadSnapshots=rows.sort((a,b)=>String(a.date).localeCompare(String(b.date))).slice(-120);
+    }
     if(progress?.book){const evidenceDate=safeDate(detailUpdateTime),accepted=(existing.weReadSnapshots||[]).some(x=>x?.date===evidenceDate&&x?.activity===true);existing.weReadProgressEvidence={date:evidenceDate,progress:p,seconds:sec,accepted,reason:accepted?'已生成微信圆圈':!evidenceDate?'接口没有返回最后阅读时间':!(sec>0||p>0||progress.book.isStartReading===1||progress.book.isStartReading===true)?'接口没有确认已经开始阅读':'已保存为进度基线'}}
     const finishTime = progress?.book?.finishTime;
     if (finishTime && !existing.finishedDate) existing.finishedDate = safeDate(finishTime);
@@ -477,7 +504,15 @@
     return out;
   }
 
-  function replaceWeReadMonth(year,month,daily){const prefix=`${year}-${pad(month)}`,next={...(state.weRead.daily||{})};Object.keys(next).forEach(date=>{if(date.startsWith(prefix))delete next[date]});Object.assign(next,daily);state.weRead.daily=next;state.sessions=state.sessions.filter(s=>!(s.source==='weread'&&s.aggregate===true&&String(s.date||'').startsWith(prefix)));Object.entries(daily).forEach(([date,seconds])=>{const sec=n(seconds);if(sec>0)state.sessions.push({id:`${WR_SESSION_PREFIX}${date}`,date,bookKey:'',title:'微信读书',minutes:Math.round(sec/60),seconds:sec,words:0,source:'weread',aggregate:true,precision:'daily-total'})})}
+  function replaceWeReadMonth(year,month,daily){
+    const prefix=`${year}-${pad(month)}`,incoming=daily&&typeof daily==='object'?daily:{};
+    // The upstream month response can temporarily omit a recent day. Merge only
+    // dates it explicitly returned so a refresh cannot delete yesterday's data.
+    state.weRead.daily={...(state.weRead.daily||{}),...incoming};
+    const returnedDates=new Set(Object.keys(incoming).filter(date=>date.startsWith(prefix)));
+    state.sessions=state.sessions.filter(s=>!(s.source==='weread'&&s.aggregate===true&&returnedDates.has(String(s.date||''))));
+    Object.entries(incoming).forEach(([date,seconds])=>{const sec=n(seconds);if(date.startsWith(prefix)&&sec>0)state.sessions.push({id:`${WR_SESSION_PREFIX}${date}`,date,bookKey:'',title:'微信读书',minutes:Math.round(sec/60),seconds:sec,words:0,source:'weread',aggregate:true,precision:'daily-total'})});
+  }
   async function syncCurrentYearDaily(ctx=activeSync){const now=new Date(),year=now.getFullYear(),lastMonth=now.getMonth()+1;if(state.weRead.statsSyncYear!==year){state.weRead.statsSyncYear=year;state.weRead.statsMonthCursor=0;state.weRead.statsDone=false}else if(state.weRead.statsDone){state.weRead.statsMonthCursor=Math.max(0,lastMonth-1);state.weRead.statsDone=false}const completed=Math.max(0,Math.min(n(state.weRead.statsMonthCursor),lastMonth));if(completed>=lastMonth){state.weRead.statsDone=true;state.weRead.statsMonthCursor=0;return{year,days:n(state.weRead.statsDays),done:true,month:lastMonth,lastMonth,sessions:[]}}const month=completed+1;assertSyncActive(ctx);setWeReadStatus(`正在同步 ${year} 年 ${month} 月阅读时间（${month}/${lastMonth}）。本次只处理这一个月……`);const baseTime=Math.floor(new Date(year,month-1,15).getTime()/1000),result=await wereadCall('/readdata/detail',{mode:'monthly',baseTime},ctx),daily=parseReadTimesObject(result.dailyReadTimes||result.readTimes);diagnosticStage('merge-month',{year,month,days:Object.keys(daily).length});replaceWeReadMonth(year,month,daily);state.weRead.statsMonthCursor=month;state.weRead.statsDays=Object.keys(state.weRead.daily).length;state.weRead.statsDone=month>=lastMonth;if(state.weRead.statsDone)state.weRead.statsMonthCursor=0;return{year,days:state.weRead.statsDays,done:state.weRead.statsDone,month,lastMonth,sessions:state.sessions.filter(s=>s.source==='weread'&&String(s.date||'').startsWith(`${year}-${pad(month)}`))}}
 
   async function syncShelfBase(ctx) {
@@ -542,6 +577,7 @@
       state.weRead.skillVersion=SKILL_VERSION;
       if(state.weRead.syncPhase==='complete'){const circleBooks=state.books.filter(b=>b.sources?.includes('weread')&&(window.yuejiVerifiedWeReadActivityDates?.(b)||[]).length).length,detailBooks=state.books.filter(b=>b.sources?.includes('weread')&&b.weReadProgressEvidence?.date).length,evidence=progressEvidenceSummary();state.weRead.lastReport={completedAt:Date.now(),shelfBooks:n(state.weRead.shelfTotal),readDays:Object.keys(state.weRead.daily||{}).length,progressBooks:n(state.weRead.progressTotal),circleBooks,detailBooks,notebookBooks:n(state.weRead.notebooksTotal),evidenceSummary:evidence.summary,noCircleTitles:evidence.without}}
       state.source=state.books.some(b=>b.sources?.includes('moon'))?'多源阅读档案':'微信读书';await commitSyncCheckpoint({books:changedBooks,sessions:changedSessions,includeShelf});
+      window.yuejiMarkDataRevision?.();
       if(phase==='progress'&&page==='analytics'){renderAnalytics();window.yuejiRenderEvolution?.()}
       if(manual)await window.yuejiRequestPersistentStorage?.();updateSourcePill();updateWeReadStatus(extra);toast('本次同步步骤已保存');
     }catch(e){
@@ -560,7 +596,7 @@
 
   function renderAllSafe(){
     try{renderToday()}catch{} try{renderCalendar()}catch{} try{renderBookOptions()}catch{} if(page==='notes')try{renderNotes()}catch{}
-    try{if(page==='analytics')renderAnalytics()}catch{} try{if(page==='monthly'){renderMonthly();renderYearWall()}}catch{}
+    try{if(page==='analytics')renderAnalytics()}catch{} try{if(page==='monthly'){renderMonthly();(window.renderYearWall||renderYearWall)()}}catch{}
     if(page==='notes')patchNoteSources();
   }
 

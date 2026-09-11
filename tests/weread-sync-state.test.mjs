@@ -54,15 +54,28 @@ state.books[0].weReadSnapshots=[{date:context.todayKey,progress:35,seconds:600,a
 api.mergeBookFromWeRead({bookId:'book-1',title:'测试书',author:'作者'},{book:{progress:35,isStartReading:1,recordReadingTime:600,updateTime:detailUpdateTime}});
 assert.equal(state.books[0].weReadSnapshots.length,1,'a legacy ambiguous baseline must be replaced instead of leaving a duplicate circle');
 assert.equal(state.books[0].weReadSnapshots[0].activity,true,'a legacy baseline must upgrade when detailed timestamp evidence becomes available');
+api.mergeBookFromWeRead({bookId:'book-1',title:'测试书',author:'作者'},{book:{progress:35,isStartReading:1,recordReadingTime:600,updateTime:detailUpdateTime}});
+assert.equal(state.books[0].weReadSnapshots.length,1,'re-reading unchanged progress on the same date must not duplicate the snapshot');
+assert.equal(state.books[0].weReadSnapshots[0].activity,true,'re-reading unchanged progress must not downgrade a verified activity date');
+assert.equal(state.books[0].weReadSnapshots[0].evidence,'detail-first','re-reading unchanged progress must preserve the original evidence type');
+const nextDetailDate=new Date(detailUpdateTime*1000);nextDetailDate.setDate(nextDetailDate.getDate()+1);
+api.mergeBookFromWeRead({bookId:'book-1',title:'测试书',author:'作者'},{book:{progress:35,isStartReading:1,recordReadingTime:600,updateTime:Math.floor(nextDetailDate.getTime()/1000)}});
+assert.equal(state.books[0].weReadSnapshots.at(-1).date,dateKey(nextDetailDate),'a newer detail timestamp must retain its exact book date even when cumulative values are unchanged');
+assert.equal(state.books[0].weReadSnapshots.at(-1).activity,true,'a newer detail timestamp must create durable book activity evidence');
 await oneStep('notebooks');assert.equal(state.weRead.syncPhase,'bookmarks');
 await oneStep('bookmarks');assert.equal(state.weRead.syncPhase,'reviews');
 await oneStep('reviews');assert.equal(state.weRead.syncPhase,'complete');assert.equal(state.highlights.length,2);
 assert.equal(saveCount,savesBeforeSync,'network sync must not serialize the full archive into localStorage');
 
 state.weRead.syncPhase='stats';state.weRead.statsDone=true;
+const currentMonthPrefix=context.todayKey.slice(0,7),preservedDate=`${currentMonthPrefix}-01`;
+state.weRead.daily[preservedDate]=321;
+state.sessions.push({id:`weread-day:${preservedDate}`,date:preservedDate,bookKey:'',minutes:6,seconds:321,source:'weread',aggregate:true});
 await oneStep('repeat-current-month');
 const aggregate=state.sessions.filter(row=>row.source==='weread'&&row.aggregate);
 assert.equal(new Set(aggregate.map(row=>row.id)).size,aggregate.length,'repeated month must not duplicate aggregate sessions');
+assert.equal(state.weRead.daily[preservedDate],321,'an incomplete month response must preserve a previously synced omitted date');
+assert.equal(aggregate.some(row=>row.date===preservedDate),true,'an omitted day must retain its aggregate session');
 
 state.weRead.syncPhase='verify';pauseNext=true;
 const pending=api.syncWeRead({mode:'continue',manual:false});

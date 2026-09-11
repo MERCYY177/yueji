@@ -242,7 +242,7 @@ function annual(){
   w.hidden=false;w.style.removeProperty('display');
   const title=w.querySelector('.section-title');
   if(title)title.textContent='年度报告 · My Year in Books';
-  try{renderYearWall()}catch(e){console.warn(e)}
+  try{(window.renderYearWall||renderYearWall)()}catch(e){console.warn(e)}
 }
 
 function init(){

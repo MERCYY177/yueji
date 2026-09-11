@@ -191,7 +191,7 @@ async function renderCalendarAnnual(){
   if(!card)return;
   const year=calendarDate.getFullYear();
   document.getElementById('yearWallYear').value=year;
-  await renderYearWall();
+  await (window.renderYearWall||renderYearWall)();
   const preview=document.getElementById('calendarYearWallPreview');
   preview.innerHTML=document.getElementById('yearWallPreview').innerHTML;
   await hydrateCovers(preview);
@@ -229,7 +229,7 @@ function showStatsTab(tab){
   document.querySelectorAll('.stats-panel').forEach(p=>p.hidden=p.id!==`statsPanel-${statsTab}`);
   if(statsTab==='overview'){coreRenderAnalytics();renderOverviewStats()}
   if(statsTab==='month')renderMonthly();
-  if(statsTab==='year')renderYearWall();
+  if(statsTab==='year')(window.renderYearWall||renderYearWall)();
   if(statsTab==='evolution'){moveEvolutionCard();setTimeout(()=>{try{window.dispatchEvent(new Event('resize'))}catch{}},20)}
 }
 
@@ -264,7 +264,7 @@ function install(){
   renderHomeDashboard();
   renderLibrary();
   coreRenderAnalytics();renderOverviewStats();
-  renderMonthly();renderYearWall();
+  renderMonthly();(window.renderYearWall||renderYearWall)();
   showStatsTab('overview');
   switchPage(page==='monthly'?'analytics':page);
 }
