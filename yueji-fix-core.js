@@ -128,11 +128,13 @@ function weReadTrack(b){
 function buildEvolutionItems(source){
   const sessionMap=new Map();
   state.sessions.forEach(s=>{if(!s.bookKey||s.source!=='moon')return;const row=sessionMap.get(s.bookKey)||{dates:[],minutes:0};if(s.date)row.dates.push(s.date);row.minutes+=N(s.minutes);sessionMap.set(s.bookKey,row)});
+  const manualDateMap=new Map();
+  Object.values(state.journals||{}).forEach(j=>{if(!j?.read||!j.bookKey||!j.date)return;const dates=manualDateMap.get(j.bookKey)||[];dates.push(j.date);manualDateMap.set(j.bookKey,dates)});
   return state.books.map(b=>{
     const local=sessionMap.get(b.key)||{dates:[],minutes:0};
     const moonDates=[...new Set(local.dates.filter(Boolean))].sort();
     const weread=weReadTrack(b),wereadDates=weread.dates;
-    const manualDates=Object.values(state.journals||{}).filter(j=>j?.read&&j.bookKey===b.key&&j.date).map(j=>j.date).sort();
+    const manualDates=(manualDateMap.get(b.key)||[]).sort();
     let dates=[],mins=0,evidenceSource=source;
     let evidenceQuality='exact-session';
     if(source==='moon'){dates=moonDates;mins=local.minutes}
@@ -247,14 +249,6 @@ function annual(){
 
 function init(){
   injectStyles();shell();if(typeof page!=='undefined'&&page==='analytics')render();annual();
-  const oldSwitch=switchPage;
-  switchPage=function(p){
-    oldSwitch(p);
-    setTimeout(()=>{
-      if(p==='analytics'){shell();render()}
-      if(p==='monthly')annual();
-    },20);
-  };
   const card=document.getElementById('readingEvolutionCard');
   if(card){
     new MutationObserver(()=>{

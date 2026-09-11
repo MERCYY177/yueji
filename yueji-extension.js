@@ -147,6 +147,8 @@
   window.yuejiDeleteWeReadSyncBook=deleteSyncBook;
 
   window.yuejiCompactExternalState=value=>{const books=(value.books||[]).flatMap(b=>{const sources=(b.sources||[]).filter(x=>x!=='weread');if(!sources.length)return[];const copy={...b,sources};delete copy.weReadBookId;delete copy.weReadSeconds;delete copy.weReadLastRead;delete copy.weReadCover;delete copy.readUpdateTime;delete copy.finishReading;return[copy]}),weRead=value.weRead?compactLocalWeReadMeta({weRead:value.weRead}):undefined;return{...value,books,sessions:(value.sessions||[]).filter(s=>s.source!=='weread'),weRead}}
+  const compactExternalStateBase=window.yuejiCompactExternalState;
+  window.yuejiCompactExternalState=value=>{const result=compactExternalStateBase(value);result.books=(result.books||[]).map(book=>{if(!book.sourceArchives)return book;const copy={...book,sourceArchives:{moon:book.sourceArchives.moon}};if(!copy.sourceArchives.moon)delete copy.sourceArchives;return copy});return result};
   window.yuejiPersistExternalState=replaceSyncArchive;
   window.yuejiPersistMergedWeReadBook=persistMergedWeReadBook;
   window.yuejiPersistSplitWeReadBook=persistSplitWeReadBook;
@@ -480,7 +482,8 @@
       };
       const rows=oldRows.filter(x=>x?.date!==snapshotDate);
       rows.push(snapshot);
-      existing.weReadSnapshots=rows.sort((a,b)=>String(a.date).localeCompare(String(b.date))).slice(-120);
+      // Reading evidence is historical data, not a short-lived UI cache.
+      existing.weReadSnapshots=rows.sort((a,b)=>String(a.date).localeCompare(String(b.date)));
     }
     if(progress?.book){const evidenceDate=safeDate(detailUpdateTime),accepted=(existing.weReadSnapshots||[]).some(x=>x?.date===evidenceDate&&x?.activity===true);existing.weReadProgressEvidence={date:evidenceDate,progress:p,seconds:sec,accepted,reason:accepted?'已生成微信圆圈':!evidenceDate?'接口没有返回最后阅读时间':!(sec>0||p>0||progress.book.isStartReading===1||progress.book.isStartReading===true)?'接口没有确认已经开始阅读':'已保存为进度基线'}}
     const finishTime = progress?.book?.finishTime;
@@ -660,7 +663,6 @@
   }
 
   function installHooks(){
-    const originalSwitchPage=switchPage; switchPage=function(p){originalSwitchPage(p);if(p==='analytics'&&!document.getElementById('readingEvolutionCard')?.dataset.greenTimeline)setTimeout(renderEvolution,0);if(p==='notes')setTimeout(patchNoteSources,0)};
     document.getElementById('noteSearch')?.addEventListener('input',()=>setTimeout(patchNoteSources,0)); document.getElementById('noteBookFilter')?.addEventListener('change',()=>setTimeout(patchNoteSources,0));
     document.getElementById('mrproFile')?.addEventListener('change',()=>setTimeout(()=>{ensureStateShape();updateSourcePill();if(page==='analytics')(window.yuejiRenderEvolution||renderEvolution)()},1500));
     const notes=document.getElementById('notesList'); if(notes)new MutationObserver(()=>patchNoteSources()).observe(notes,{childList:true,subtree:true});

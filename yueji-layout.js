@@ -227,7 +227,7 @@ function showStatsTab(tab){
   statsTab=tab||'overview';
   document.querySelectorAll('#statsTabs [data-stats-tab]').forEach(b=>b.classList.toggle('active',b.dataset.statsTab===statsTab));
   document.querySelectorAll('.stats-panel').forEach(p=>p.hidden=p.id!==`statsPanel-${statsTab}`);
-  if(statsTab==='overview'){coreRenderAnalytics();renderOverviewStats()}
+  if(statsTab==='overview')renderOverviewStats()
   if(statsTab==='month')renderMonthly();
   if(statsTab==='year')(window.renderYearWall||renderYearWall)();
   if(statsTab==='evolution'){moveEvolutionCard();setTimeout(()=>{try{window.dispatchEvent(new Event('resize'))}catch{}},20)}
