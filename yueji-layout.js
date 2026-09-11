@@ -261,12 +261,8 @@ function install(){
   installStatsStructure();
   rebuildBottomNav();
   patchCore();
-  renderHomeDashboard();
-  renderLibrary();
-  coreRenderAnalytics();renderOverviewStats();
-  renderMonthly();(window.renderYearWall||renderYearWall)();
-  showStatsTab('overview');
-  switchPage(page==='monthly'?'analytics':page);
+  const initialPage=page==='monthly'?'analytics':page;
+  switchPage(initialPage);
 }
 
 document.readyState==='loading'?document.addEventListener('DOMContentLoaded',()=>setTimeout(install,0),{once:true}):setTimeout(install,0);

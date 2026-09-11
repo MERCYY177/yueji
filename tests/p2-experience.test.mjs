@@ -43,7 +43,8 @@ assert.match(app,/\(window\.renderYearWall\|\|renderYearWall\)\(\)/,'page change
 assert.match(app,/window\.yuejiMarkDataRevision=\(\)=>\{sessionDateIndex=null;markDataRevision\(\);window\.dispatchEvent/,'incremental sync must invalidate caches and notify visible reports without a full archive save');
 assert.match(extension,/window\.yuejiMarkDataRevision\?\.\(\)/,'each completed sync step must invalidate live UI caches');
 assert.doesNotMatch(extension,/weReadSnapshots=rows[^\n]+slice\(-120\)/,'historical WeRead activity must not disappear after 120 snapshots');
-assert.match(app,/yueji:data-changed/,'data mutations must notify every visible report');
+assert.match(app,/yueji:data-changed/,'data mutations must expose a lightweight cache invalidation signal');
+assert.doesNotMatch(app,/addEventListener\(['"]yueji:data-changed/,'data invalidation must not synchronously repaint every report');
 assert.match(features,/for\(const s of state\.sessions\|\|\[\]\)/,'annual book identity must use raw per-book sessions independently of aggregate totals');
 assert.match(features,/const scale=Math\.min\(w\/bmp\.width,h\/bmp\.height\)/,'exported covers must preserve their full aspect ratio');
 const layout=fs.readFileSync(new URL('../yueji-layout.js',import.meta.url),'utf8');
@@ -54,7 +55,15 @@ assert.match(app,/month-book-cover cover-art/,'monthly reports must render real 
 assert.match(html,/<title>阅迹<\/title>/,'the initial browser title must be 阅迹');
 assert.match(style,/grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/,'mobile KPI columns must be allowed to shrink without overflowing');
 assert.match(style,/\.library-top-row \.search\{[^}]*min-width:0/,'the mobile search box must be allowed to shrink inside its card');
-assert.equal((html.match(/20260911-p2-v5/g)||[]).length,10,'stylesheet and runtime scripts must share one fresh cache key');
+assert.equal((html.match(/20260911-p2-v6/g)||[]).length,10,'stylesheet and runtime scripts must share one fresh cache key');
 assert.doesNotMatch(html,/src="yueji-fix\.js/,'runtime scripts must use a deterministic static order instead of a nested loader');
+
+const layoutInstall=layout.match(/function install\(\)\{[\s\S]*?\n\}/)?.[0]||'';
+assert.doesNotMatch(layoutInstall,/renderLibrary\(\)|coreRenderAnalytics\(\)|renderMonthly\(\)|renderYearWall/,'startup must not eagerly render hidden library and report modules');
+assert.match(layoutInstall,/switchPage\(initialPage\)/,'startup must render only the visible page');
+const yearModeInstall=features.match(/function installYearModes\(\)\{[^\n]+/)?.[0]||'';
+assert.doesNotMatch(yearModeInstall,/renderYearReport\(\);\s*$/,'annual reports must render only after their tab is opened');
+assert.doesNotMatch(features,/new MutationObserver\(\(\)=>decorateModules\(\)\)/,'ordinary DOM updates must not rescan every report card');
+assert.match(features,/打开设置后加载重复书籍/,'quadratic duplicate review must be lazy-loaded');
 
 console.log('PASS P2 merge control, sync report, evidence explanation and long-export safeguards');

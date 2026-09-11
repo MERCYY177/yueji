@@ -248,7 +248,9 @@ function annual(){
 }
 
 function init(){
-  injectStyles();shell();if(typeof page!=='undefined'&&page==='analytics')render();annual();
+  injectStyles();shell();if(typeof page!=='undefined'&&page==='analytics')render();
+  const yearWall=document.querySelector('.year-wall');
+  if(yearWall){const title=yearWall.querySelector('.section-title');if(title)title.textContent='年度报告 · My Year in Books'}
   const card=document.getElementById('readingEvolutionCard');
   if(card){
     new MutationObserver(()=>{
