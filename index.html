@@ -1,328 +1,373 @@
 <!doctype html>
 <html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#f4f3ef" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#121313" media="(prefers-color-scheme: dark)">
-  <title>阅迹</title>
-  <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="style.css?v=20260911-p2-v6">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.11.0/sql-asm.js"></script>
-</head>
-<body>
-<div id="app">
-  <header class="topbar">
-    <div>
-      <div class="kicker">READING ARCHIVE</div>
-      <h1>阅迹</h1>
-    </div>
-    <div class="top-actions">
-      <span class="source-pill" id="sourcePill">演示数据</span>
-      <button class="round-btn" id="settingsBtn" aria-label="设置">⚙</button>
-    </div>
-  </header>
-
-  <main>
-    <!-- TODAY -->
-    <section class="page active" data-page="today">
-      <div class="hero card">
-        <div class="hero-copy">
-          <div class="eyebrow">今天的阅读</div>
-          <h2 id="todayDate">—</h2>
-          <div class="hero-row">
-            <div><b id="todayMinutes">0</b><span>分钟</span></div>
-            <div><b id="todayBooks">0</b><span>本书</span></div>
-            <div><b id="todayWords">0</b><span>字</span></div>
-          </div>
-          <div id="todayCompact" class="today-compact"></div>
-          <button class="soft-btn today-write" id="editTodayBtn">写感想</button>
-        </div>
-        <div class="hero-mark" id="todayMark">📖</div>
-      </div>
-    </section>
-
-    <!-- CALENDAR -->
-    <section class="page" data-page="calendar">
-      <div class="calendar-head card">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <meta name="theme-color" content="#f4f3ef" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#121313" media="(prefers-color-scheme: dark)" />
+    <title>阅迹</title>
+    <link rel="manifest" href="manifest.json" />
+    <link rel="icon" href="assets/icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="assets/icons/icon-192.png" />
+    <link rel="stylesheet" href="style.css?v=20260912-r2" />
+    <script src="vendor/jszip.min.js?v=3.10.1"></script>
+    <script src="vendor/sql-asm.js?v=1.11.0"></script>
+    <script src="yueji-core.js?v=20260912-r2"></script>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
         <div>
-          <div class="kicker">READING CALENDAR</div>
-          <h2 id="calendarTitle">阅读日历</h2>
+          <div class="kicker">READING ARCHIVE</div>
+          <h1>阅迹</h1>
         </div>
-        <div class="seg" id="calendarMode">
-          <button class="active" data-calendar-mode="month">月历</button>
-          <button data-calendar-mode="year">年历</button>
+        <div class="top-actions">
+          <span class="source-pill" id="sourcePill">演示数据</span>
+          <button class="round-btn" id="settingsBtn" aria-label="设置">⚙</button>
         </div>
-      </div>
+      </header>
 
-      <div class="calendar-nav">
-        <button class="round-btn" id="calendarPrev" aria-label="上一个">‹</button>
-        <b id="calendarPeriod"></b>
-        <select id="calendarYearSelect" class="calendar-year-select" aria-label="选择年历年份" hidden></select>
-        <button class="round-btn" id="calendarNext" aria-label="下一个">›</button>
-      </div>
-
-      <div class="card calendar-card" id="monthCalendarWrap">
-        <div class="calendar-weekdays"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
-        <div id="monthCalendar" class="cover-calendar"></div>
-      </div>
-
-      <div class="card" id="yearCalendarWrap" hidden>
-        <div class="section-head">
-          <div>
-            <div class="section-title">阅读一年</div>
-            <div class="section-sub">有阅读记录的日期会自动点亮。</div>
+      <main>
+        <!-- TODAY -->
+        <section class="page active" data-page="today">
+          <div class="hero card">
+            <div class="hero-copy">
+              <div class="eyebrow">今天的阅读</div>
+              <h2 id="todayDate">—</h2>
+              <div class="hero-row">
+                <div><b id="todayMinutes">0</b><span>分钟</span></div>
+                <div><b id="todayBooks">0</b><span>本书</span></div>
+                <div><b id="todayWords">0</b><span>字</span></div>
+              </div>
+              <div id="todayCompact" class="today-compact"></div>
+              <button class="soft-btn today-write" id="editTodayBtn">写感想</button>
+            </div>
+            <div class="hero-mark" id="todayMark">📖</div>
           </div>
-          <div class="compact-stat"><b id="challengeRead">0</b><span>天</span></div>
-        </div>
-        <div class="months-grid" id="challengeGrid"></div>
-      </div>
+        </section>
 
-      <div hidden>
-        <input id="bookSearch">
-        <div id="librarySeg"></div>
-        <span id="libraryCount"></span>
-        <div id="bookshelf"></div>
-        <div id="bookTable"></div>
-        <div id="todayJournal"></div>
-        <div id="todayBookList"></div>
-      </div>
-    </section>
-
-    <!-- NOTES -->
-    <section class="page" data-page="notes">
-      <div class="card">
-        <div class="section-head">
-          <div>
-            <div class="section-title">我的阅读笔记</div>
-            <div class="section-sub">先按书整理，再区分摘录和你写下的感想。</div>
+        <!-- CALENDAR -->
+        <section class="page" data-page="calendar">
+          <div class="calendar-head card">
+            <div>
+              <div class="kicker">READING CALENDAR</div>
+              <h2 id="calendarTitle">阅读日历</h2>
+            </div>
+            <div class="seg" id="calendarMode">
+              <button class="active" data-calendar-mode="month">月历</button>
+              <button data-calendar-mode="year">年历</button>
+            </div>
           </div>
-        </div>
-        <div class="note-filter-row">
-          <input id="noteSearch" class="search" placeholder="搜索感悟 / 摘录">
-          <select id="noteBookFilter"><option value="">全部书籍</option></select>
-        </div>
-        <div class="seg note-kind-seg" id="noteKindSeg">
-          <button class="active" data-kind="all">全部</button>
-          <button data-kind="quotes">摘录</button>
-          <button data-kind="thoughts">感想</button>
-        </div>
-      </div>
-      <div id="notesList" class="notes-list"></div>
-    </section>
 
-    <!-- ANALYTICS -->
-    <section class="page" data-page="analytics">
-      <div class="analytics-head">
-        <div class="kicker">Reading Analytics</div>
-        <h2>阅读统计</h2>
-        <div class="section-sub">根据静读天下 `.mrpro` 中的逐日统计自动计算</div>
-      </div>
-
-      <div class="kpi-grid" id="kpiGrid"></div>
-
-      <div class="analytics-two">
-        <div class="card">
-          <div class="section-head"><div class="section-title">分类分布</div></div>
-          <div id="categoryTreemap" class="treemap"></div>
-          <div id="categoryLegend" class="legend"></div>
-        </div>
-        <div class="card">
-          <div class="section-head"><div class="section-title">阅读进度分布</div></div>
-          <div id="progressBars" class="progress-bars"></div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="section-head">
-          <div>
-            <div class="section-title">阅读时间线</div>
-            <div class="section-sub">颜色越深，那个自然月读得越多。</div>
+          <div class="calendar-nav">
+            <button class="round-btn" id="calendarPrev" aria-label="上一个">‹</button>
+            <b id="calendarPeriod"></b>
+            <select
+              id="calendarYearSelect"
+              class="calendar-year-select"
+              aria-label="选择年历年份"
+              hidden
+            ></select>
+            <button class="round-btn" id="calendarNext" aria-label="下一个">›</button>
           </div>
-        </div>
-        <div id="timelineHeat" class="timeline-heat"></div>
-      </div>
 
-    </section>
+          <div class="card calendar-card" id="monthCalendarWrap">
+            <div class="calendar-weekdays">
+              <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span
+              ><span>五</span><span>六</span>
+            </div>
+            <div id="monthCalendar" class="cover-calendar"></div>
+          </div>
 
-    <!-- MONTHLY -->
-    <section class="page" data-page="monthly">
-      <div class="monthly-head">
+          <div class="card" id="yearCalendarWrap" hidden>
+            <div class="section-head">
+              <div>
+                <div class="section-title">阅读一年</div>
+                <div class="section-sub">有阅读记录的日期会自动点亮。</div>
+              </div>
+              <div class="compact-stat"><b id="yearReadDays">0</b><span>天</span></div>
+            </div>
+            <div class="months-grid" id="yearCalendarGrid"></div>
+          </div>
+
+          <div hidden>
+            <input id="bookSearch" />
+            <div id="librarySeg"></div>
+            <span id="libraryCount"></span>
+            <div id="bookshelf"></div>
+            <div id="bookTable"></div>
+            <div id="todayJournal"></div>
+            <div id="todayBookList"></div>
+          </div>
+        </section>
+
+        <!-- NOTES -->
+        <section class="page" data-page="notes">
+          <div class="card">
+            <div class="section-head">
+              <div>
+                <div class="section-title">我的阅读笔记</div>
+                <div class="section-sub">先按书整理，再区分摘录和你写下的感想。</div>
+              </div>
+            </div>
+            <div class="note-filter-row">
+              <input id="noteSearch" class="search" placeholder="搜索感悟 / 摘录" />
+              <select id="noteBookFilter">
+                <option value="">全部书籍</option>
+              </select>
+            </div>
+            <div class="seg note-kind-seg" id="noteKindSeg">
+              <button class="active" data-kind="all">全部</button>
+              <button data-kind="quotes">摘录</button>
+              <button data-kind="thoughts">感想</button>
+            </div>
+          </div>
+          <div id="notesList" class="notes-list"></div>
+        </section>
+
+        <!-- ANALYTICS -->
+        <section class="page" data-page="analytics">
+          <div class="analytics-head">
+            <div class="kicker">Reading Analytics</div>
+            <h2>阅读统计</h2>
+            <div class="section-sub">根据静读天下 `.mrpro` 中的逐日统计自动计算</div>
+          </div>
+
+          <div class="kpi-grid" id="kpiGrid"></div>
+
+          <div class="analytics-two">
+            <div class="card">
+              <div class="section-head"><div class="section-title">分类分布</div></div>
+              <div id="categoryTreemap" class="treemap"></div>
+              <div id="categoryLegend" class="legend"></div>
+            </div>
+            <div class="card">
+              <div class="section-head"><div class="section-title">阅读进度分布</div></div>
+              <div id="progressBars" class="progress-bars"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="section-head">
+              <div>
+                <div class="section-title">阅读时间线</div>
+                <div class="section-sub">颜色越深，那个自然月读得越多。</div>
+              </div>
+            </div>
+            <div id="timelineHeat" class="timeline-heat"></div>
+          </div>
+        </section>
+
+        <!-- MONTHLY -->
+        <section class="page" data-page="monthly">
+          <div class="monthly-head">
+            <div>
+              <div class="kicker">Monthly Journal</div>
+              <h2 id="monthlyTitle">阅读月报</h2>
+            </div>
+            <input type="month" id="monthPicker" />
+          </div>
+
+          <div class="monthly-kpis" id="monthlyKpis"></div>
+
+          <div class="monthly-layout">
+            <div class="card">
+              <div class="section-head">
+                <div class="section-title" id="monthSeenTitle">本月看过</div>
+              </div>
+              <div id="monthSeenBooks" class="month-seen-grid"></div>
+            </div>
+            <div class="monthly-side">
+              <div class="card">
+                <div class="section-head">
+                  <div class="section-title" id="monthTopTitle">本月高频</div>
+                </div>
+                <div id="monthTopBook"></div>
+              </div>
+              <div class="card">
+                <div class="section-head"><div class="section-title">本月读完</div></div>
+                <div id="monthFinished"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="section-head"><div class="section-title">月度小结</div></div>
+            <p id="monthSummary" class="month-summary"></p>
+          </div>
+
+          <div class="year-wall card">
+            <div class="section-head">
+              <div>
+                <div class="section-title">My Year in Books</div>
+                <div class="section-sub">按读完月份排列，只收录进度达到 100% 的书。</div>
+              </div>
+              <div class="year-wall-actions">
+                <select id="yearWallYear" aria-label="选择年度报告年份"></select>
+                <button class="soft-btn" id="saveYearWall">保存图片</button>
+              </div>
+            </div>
+            <div id="yearWallPreview" class="year-wall-preview"></div>
+          </div>
+        </section>
+      </main>
+
+      <nav class="bottom-nav">
+        <button class="nav-btn active" data-go="today"><span>⌂</span>今天</button>
+        <button class="nav-btn" data-go="calendar"><span>▦</span>日历</button>
+        <button class="nav-btn" data-go="notes"><span>✎</span>笔记</button>
+        <button class="nav-btn" data-go="analytics"><span>◫</span>统计</button>
+        <button class="nav-btn" data-go="monthly"><span>☷</span>月报</button>
+      </nav>
+    </div>
+
+    <div class="overlay" id="overlay"></div>
+
+    <!-- SETTINGS -->
+    <div class="sheet" id="settingsSheet">
+      <div class="grab"></div>
+      <div class="sheet-head">
         <div>
-          <div class="kicker">Monthly Journal</div>
-          <h2 id="monthlyTitle">阅读月报</h2>
+          <div class="kicker">SETTINGS</div>
+          <h3>设置与数据</h3>
         </div>
-        <input type="month" id="monthPicker">
+        <button class="close-btn" data-close>✕</button>
       </div>
 
-      <div class="monthly-kpis" id="monthlyKpis"></div>
-
-      <div class="monthly-layout">
-        <div class="card">
-          <div class="section-head"><div class="section-title" id="monthSeenTitle">本月看过</div></div>
-          <div id="monthSeenBooks" class="month-seen-grid"></div>
-        </div>
-        <div class="monthly-side">
-          <div class="card">
-            <div class="section-head"><div class="section-title" id="monthTopTitle">本月高频</div></div>
-            <div id="monthTopBook"></div>
-          </div>
-          <div class="card">
-            <div class="section-head"><div class="section-title">本月读完</div></div>
-            <div id="monthFinished"></div>
+      <div class="settings-section">
+        <h4>导入静读天下</h4>
+        <label class="import-box">
+          <input type="file" id="mrproFile" accept=".mrstd,.mrpro,.zip" hidden />
+          <b>选择 `.mrstd` 或 `.mrpro` 备份</b>
+          <span>不需要包含电子书正文；文件只在当前浏览器本地解析。</span>
+        </label>
+        <div id="importStatus" class="import-status"></div>
+        <div id="importPreview" class="import-preview" hidden>
+          <div id="importPreviewText"></div>
+          <div class="settings-actions">
+            <button class="primary-btn import-confirm" id="confirmMoonImport">确认合并导入</button>
+            <button class="soft-btn" id="cancelMoonImport">取消</button>
           </div>
         </div>
       </div>
 
-      <div class="card">
-        <div class="section-head"><div class="section-title">月度小结</div></div>
-        <p id="monthSummary" class="month-summary"></p>
-      </div>
-
-      <div class="year-wall card">
-        <div class="section-head">
-          <div>
-            <div class="section-title">My Year in Books</div>
-            <div class="section-sub">按读完月份排列，只收录进度达到 100% 的书。</div>
-          </div>
-          <div class="year-wall-actions">
-            <select id="yearWallYear" aria-label="选择年度报告年份"></select>
-            <button class="soft-btn" id="saveYearWall">保存图片</button>
-          </div>
+      <div class="settings-section">
+        <h4>点亮颜色</h4>
+        <div class="color-row" id="colorRow">
+          <button data-color="#5f8f7b" style="--c: #5f8f7b"></button>
+          <button data-color="#567fae" style="--c: #567fae"></button>
+          <button data-color="#9272ad" style="--c: #9272ad"></button>
+          <button data-color="#c87d95" style="--c: #c87d95"></button>
+          <button data-color="#c88955" style="--c: #c88955"></button>
+          <input type="color" id="customColor" value="#5f8f7b" />
         </div>
-        <div id="yearWallPreview" class="year-wall-preview"></div>
+        <div class="section-sub">深色 / 浅色自动跟随系统。</div>
       </div>
-    </section>
-  </main>
 
-  <nav class="bottom-nav">
-    <button class="nav-btn active" data-go="today"><span>⌂</span>今天</button>
-    <button class="nav-btn" data-go="calendar"><span>▦</span>日历</button>
-    <button class="nav-btn" data-go="notes"><span>✎</span>笔记</button>
-    <button class="nav-btn" data-go="analytics"><span>◫</span>统计</button>
-    <button class="nav-btn" data-go="monthly"><span>☷</span>月报</button>
-  </nav>
-</div>
+      <div class="settings-section">
+        <h4>备份网页自己的数据</h4>
+        <div class="settings-actions">
+          <button class="soft-btn" id="exportBackup">导出 JSON</button>
+          <label class="soft-btn file-inline"
+            >导入 JSON<input type="file" id="importBackup" accept=".json" hidden
+          /></label>
+          <button class="soft-btn" id="loadDemo">恢复演示数据</button>
+        </div>
+      </div>
 
-<div class="overlay" id="overlay"></div>
-
-<!-- SETTINGS -->
-<div class="sheet" id="settingsSheet">
-  <div class="grab"></div>
-  <div class="sheet-head">
-    <div><div class="kicker">SETTINGS</div><h3>设置与数据</h3></div>
-    <button class="close-btn" data-close>✕</button>
-  </div>
-
-  <div class="settings-section">
-    <h4>导入静读天下</h4>
-    <label class="import-box">
-      <input type="file" id="mrproFile" accept=".mrstd,.mrpro,.zip" hidden>
-      <b>选择 `.mrstd` 或 `.mrpro` 备份</b>
-      <span>不需要包含电子书正文；文件只在当前浏览器本地解析。</span>
-    </label>
-    <div id="importStatus" class="import-status"></div>
-    <div id="importPreview" class="import-preview" hidden>
-      <div id="importPreviewText"></div>
-      <div class="settings-actions">
-        <button class="primary-btn import-confirm" id="confirmMoonImport">确认合并导入</button>
-        <button class="soft-btn" id="cancelMoonImport">取消</button>
+      <div class="settings-section" id="storageDiagnostics">
+        <h4>本地数据检查</h4>
+        <div class="section-sub">
+          只读取本机浏览器里的数量和储存状态，不会上传、删除或修改阅读数据。
+        </div>
+        <div class="diagnostic-result" id="diagnosticResult">点击检查后显示结果。</div>
+        <div class="settings-actions">
+          <button class="soft-btn" id="runDiagnostics">检查本地数据</button>
+          <button class="soft-btn" id="requestPersistentStorage">保护本地数据</button>
+          <button class="soft-btn" id="copyDiagnostics" disabled>复制诊断信息</button>
+          <button class="soft-btn" id="runStorageStress">运行压力测试</button>
+        </div>
+        <div class="section-sub diagnostic-help">
+          “保护本地数据”会请求浏览器尽量不要自动清理本站储存；压力测试会在独立临时数据库中分批写入最多
+          10,000 条模拟书摘，完成后立即删除，不接触真实数据。
+        </div>
       </div>
     </div>
-  </div>
 
-  <div class="settings-section">
-    <h4>阅读挑战日期</h4>
-    <div class="two-inputs">
-      <label><span>开始</span><input type="date" id="challengeStart"></label>
-      <label><span>结束</span><input type="date" id="challengeEnd"></label>
+    <!-- JOURNAL -->
+    <div class="sheet" id="journalSheet">
+      <div class="grab"></div>
+      <div class="sheet-head">
+        <div>
+          <div class="kicker">DAILY NOTE</div>
+          <h3 id="journalSheetTitle">阅读手记</h3>
+        </div>
+        <button class="close-btn" data-close>✕</button>
+      </div>
+      <input type="hidden" id="journalOriginalDate" />
+      <label class="field"><span>日期</span><input type="date" id="journalDate" /></label>
+      <label class="field"
+        ><span>关联书籍</span
+        ><select id="journalBook">
+          <option value="">不指定</option>
+        </select></label
+      >
+      <label class="check-line"
+        ><input type="checkbox" id="journalRead" /><span
+          >手动标记今天读过（没有静读天下记录时也可以点亮）</span
+        ></label
+      >
+      <label class="field"
+        ><span>今天看了什么</span
+        ><textarea id="journalWhat" placeholder="章节、漫画话数、文章……"></textarea>
+      </label>
+      <label class="field"
+        ><span>摘录</span><textarea id="journalQuote" placeholder="想留下的句子"></textarea>
+      </label>
+      <label class="field"
+        ><span>感悟</span><textarea id="journalThought" placeholder="想到什么就写什么。"></textarea>
+      </label>
+      <button class="primary-btn" id="saveJournal">保存这一天</button>
     </div>
-  </div>
 
-  <div class="settings-section">
-    <h4>点亮颜色</h4>
-    <div class="color-row" id="colorRow">
-      <button data-color="#5f8f7b" style="--c:#5f8f7b"></button>
-      <button data-color="#567fae" style="--c:#567fae"></button>
-      <button data-color="#9272ad" style="--c:#9272ad"></button>
-      <button data-color="#c87d95" style="--c:#c87d95"></button>
-      <button data-color="#c88955" style="--c:#c88955"></button>
-      <input type="color" id="customColor" value="#5f8f7b">
+    <!-- BOOK EDIT -->
+    <div class="sheet" id="bookSheet">
+      <div class="grab"></div>
+      <div class="sheet-head">
+        <div>
+          <div class="kicker">BOOK PROFILE</div>
+          <h3 id="bookSheetTitle">书籍资料</h3>
+        </div>
+        <button class="close-btn" data-close>✕</button>
+      </div>
+      <input type="hidden" id="bookKey" />
+      <label class="field"><span>显示书名</span><input id="bookTitle" /></label>
+      <label class="field"><span>作者</span><input id="bookAuthor" placeholder="可补充" /></label>
+      <label class="field"
+        ><span>分类</span><input id="bookCategory" placeholder="文学 / 漫画 / 艺术……"
+      /></label>
+      <div class="two-inputs">
+        <label class="field"
+          ><span>当前进度 %</span
+          ><input id="bookProgress" type="number" min="0" max="100" step=".1"
+        /></label>
+        <label class="field"
+          ><span>读完日期</span><input id="bookFinishedDate" type="date"
+        /></label>
+      </div>
+      <div class="book-data-note" id="bookDataNote"></div>
+      <button class="primary-btn" id="saveBook">保存书籍资料</button>
     </div>
-    <div class="section-sub">深色 / 浅色自动跟随系统。</div>
-  </div>
 
-  <div class="settings-section">
-    <h4>备份网页自己的数据</h4>
-    <div class="settings-actions">
-      <button class="soft-btn" id="exportBackup">导出 JSON</button>
-      <label class="soft-btn file-inline">导入 JSON<input type="file" id="importBackup" accept=".json" hidden></label>
-      <button class="soft-btn" id="loadDemo">恢复演示数据</button>
-    </div>
-  </div>
+    <div class="toast" id="toast"></div>
 
-  <div class="settings-section" id="storageDiagnostics">
-    <h4>本地数据检查</h4>
-    <div class="section-sub">只读取本机浏览器里的数量和储存状态，不会上传、删除或修改阅读数据。</div>
-    <div class="diagnostic-result" id="diagnosticResult">点击检查后显示结果。</div>
-    <div class="settings-actions">
-      <button class="soft-btn" id="runDiagnostics">检查本地数据</button>
-      <button class="soft-btn" id="requestPersistentStorage">保护本地数据</button>
-      <button class="soft-btn" id="copyDiagnostics" disabled>复制诊断信息</button>
-      <button class="soft-btn" id="runStorageStress">运行压力测试</button>
-    </div>
-    <div class="section-sub diagnostic-help">“保护本地数据”会请求浏览器尽量不要自动清理本站储存；压力测试会在独立临时数据库中分批写入最多 10,000 条模拟书摘，完成后立即删除，不接触真实数据。</div>
-  </div>
-
-</div>
-
-<!-- JOURNAL -->
-<div class="sheet" id="journalSheet">
-  <div class="grab"></div>
-  <div class="sheet-head">
-    <div><div class="kicker">DAILY NOTE</div><h3 id="journalSheetTitle">阅读手记</h3></div>
-    <button class="close-btn" data-close>✕</button>
-  </div>
-  <input type="hidden" id="journalOriginalDate">
-  <label class="field"><span>日期</span><input type="date" id="journalDate"></label>
-  <label class="field"><span>关联书籍</span><select id="journalBook"><option value="">不指定</option></select></label>
-  <label class="check-line"><input type="checkbox" id="journalRead"><span>手动标记今天读过（没有静读天下记录时也可以点亮）</span></label>
-  <label class="field"><span>今天看了什么</span><textarea id="journalWhat" placeholder="章节、漫画话数、文章……"></textarea></label>
-  <label class="field"><span>摘录</span><textarea id="journalQuote" placeholder="想留下的句子"></textarea></label>
-  <label class="field"><span>感悟</span><textarea id="journalThought" placeholder="想到什么就写什么。"></textarea></label>
-  <button class="primary-btn" id="saveJournal">保存这一天</button>
-</div>
-
-<!-- BOOK EDIT -->
-<div class="sheet" id="bookSheet">
-  <div class="grab"></div>
-  <div class="sheet-head">
-    <div><div class="kicker">BOOK PROFILE</div><h3 id="bookSheetTitle">书籍资料</h3></div>
-    <button class="close-btn" data-close>✕</button>
-  </div>
-  <input type="hidden" id="bookKey">
-  <label class="field"><span>显示书名</span><input id="bookTitle"></label>
-  <label class="field"><span>作者</span><input id="bookAuthor" placeholder="可补充"></label>
-  <label class="field"><span>分类</span><input id="bookCategory" placeholder="文学 / 漫画 / 艺术……"></label>
-  <div class="two-inputs">
-    <label class="field"><span>当前进度 %</span><input id="bookProgress" type="number" min="0" max="100" step=".1"></label>
-    <label class="field"><span>读完日期</span><input id="bookFinishedDate" type="date"></label>
-  </div>
-  <div class="book-data-note" id="bookDataNote"></div>
-  <button class="primary-btn" id="saveBook">保存书籍资料</button>
-</div>
-
-<div class="toast" id="toast"></div>
-
-<script src="app.js?v=20260911-p2-v6"></script>
-<script src="yueji-extension.js?v=20260911-p2-v6"></script>
-<script src="yueji-p1-identity-migration.js?v=20260911-p2-v6"></script>
-<script src="yueji-weread-evidence.js?v=20260911-p2-v6"></script>
-<script src="yueji-fix-core.js?v=20260911-p2-v6"></script>
-<script src="yueji-layout.js?v=20260911-p2-v6"></script>
-<script src="yueji-book-cover.js?v=20260911-p2-v6"></script>
-<script src="yueji-onboarding.js?v=20260911-p2-v6"></script>
-<script src="yueji-features.js?v=20260911-p2-v6"></script>
-</body>
+    <script src="app.js?v=20260912-r2"></script>
+    <script src="yueji-extension.js?v=20260912-r2"></script>
+    <script src="yueji-p1-identity-migration.js?v=20260912-r2"></script>
+    <script src="yueji-weread-date-evidence.js?v=20260912-r2"></script>
+    <script src="yueji-layout.js?v=20260912-r2"></script>
+    <script src="yueji-book-cover.js?v=20260912-r2"></script>
+    <script src="yueji-onboarding.js?v=20260912-r2"></script>
+    <script src="yueji-features.js?v=20260912-r2"></script>
+  </body>
 </html>

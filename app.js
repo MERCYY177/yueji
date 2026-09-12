@@ -1,259 +1,3355 @@
-const $=id=>document.getElementById(id), pad=n=>String(n).padStart(2,'0');
-const dateKey=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
-const parseDate=s=>{const [y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d)};
-const addDays=(d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x};
-const today=new Date(), todayKey=dateKey(today), STORAGE='yueji-archive-v1', DEMO_OPTIN='yueji-demo-optin-v1', HIGHLIGHTS_PENDING='yueji-highlights-pending-v1';
-const HIGHLIGHTS_DB='yueji-highlights-v1',HIGHLIGHTS_STORE='highlights',HIGHLIGHTS_TRASH_STORE='highlightTrash',HIGHLIGHTS_TRASH_ROW_STORE='highlightTrashRows',HIGHLIGHTS_STAGE_STORE='highlightStage',HIGHLIGHTS_TRASH_STAGE_STORE='highlightTrashStage';let highlightsDbReady=false,highlightsCountCache=0,highlightBookCountsCache=new Map(),highlightsWriteQueue=Promise.resolve(),sessionDateIndex=null,dataRevision=0;
-const palette=['#5f8f7b','#567fae','#9272ad','#c87d95','#c88955','#7d7065'];
-const emptyState=()=>({source:'尚未导入数据',accent:'#5f8f7b',challengeStart:`${today.getFullYear()}-01-01`,challengeEnd:`${today.getFullYear()}-12-31`,books:[],sessions:[],journals:{},highlights:[],importedAt:''});
-const demo={source:'演示数据',accent:'#5f8f7b',challengeStart:`${today.getFullYear()}-01-01`,challengeEnd:`${today.getFullYear()}-12-31`,books:[
- {key:'crime',title:'罪与罚',file:'罪与罚.epub',author:'陀思妥耶夫斯基',category:'文学',country:'俄罗斯',birth:1821,progress:38,status:'reading',minutes:426,words:93000,days:8,color:'#6f5b4e'},
- {key:'art',title:'艺术的故事',file:'艺术的故事.azw3',author:'E. H. 贡布里希',category:'艺术',country:'英国',birth:1909,progress:16,status:'reading',minutes:188,words:41000,days:5,color:'#66788d'},
- {key:'deadpool',title:'Deadpool Classic',file:'Deadpool Classic.cbz',author:'Fabian Nicieza',category:'漫画',country:'美国',birth:1961,progress:27,status:'reading',minutes:246,words:18000,days:6,color:'#934f4f'},
- {key:'stranger',title:'局外人',file:'局外人.epub',author:'阿尔贝·加缪',category:'文学',country:'法国',birth:1913,progress:100,status:'done',minutes:220,words:52000,days:4,color:'#8b8662'}],sessions:[],journals:{},importedAt:''};
-for(let i=0;i<18;i++){const d=addDays(today,-i*2);const b=demo.books[i%demo.books.length];demo.sessions.push({date:dateKey(d),bookKey:b.key,minutes:18+(i*7)%49,words:1800+(i*733)%5200})}
-demo.journals[todayKey]={date:todayKey,bookKey:'crime',read:true,what:'《罪与罚》第三章',quote:'人能够适应一切。',thought:'越往下读越觉得，拉斯柯尔尼科夫真正承受不住的并不是罪，而是他无法继续相信自己对罪的解释。'};
-let state=load();let page='today',libraryFilter='all';
-let archiveOperation='';
-function beginArchiveOperation(name){if(archiveOperation||window.__yuejiWeReadSyncing){toast(window.__yuejiWeReadSyncing?'请先暂停微信读书同步':'已有数据任务正在处理');return false}archiveOperation=name;window.__yuejiArchiveBusy=true;return true}
-function endArchiveOperation(name){if(archiveOperation===name){archiveOperation='';window.__yuejiArchiveBusy=false}}
-function clone(v){return JSON.parse(JSON.stringify(v))}
-function isUntouchedDemo(x){const keys=['crime','art','deadpool','stranger'];return x?.source==='演示数据'&&Array.isArray(x.books)&&x.books.length===4&&keys.every(k=>x.books.some(b=>b.key===k))&&Array.isArray(x.sessions)&&x.sessions.length===18}
-function load(){try{const x=JSON.parse(localStorage.getItem(STORAGE));if(x&&(!isUntouchedDemo(x)||localStorage.getItem(DEMO_OPTIN)==='1'))return normalize(x);if(isUntouchedDemo(x))localStorage.removeItem(STORAGE)}catch(e){}return emptyState()}
-function normalize(x={}){return {...emptyState(),...x,books:Array.isArray(x.books)?x.books:[],sessions:Array.isArray(x.sessions)?x.sessions:[],journals:x.journals&&typeof x.journals==='object'?x.journals:{},highlights:Array.isArray(x.highlights)?x.highlights:[]}}
-function identityText(value){return String(value||'').normalize('NFKC').toLowerCase().replace(/\.(epub|mobi|azw3?|pdf|txt|cbz|cbr)$/i,'').replace(/[\s·•:：,，.。!！?？'"“”‘’\-—_()（）\[\]【】《》〈〉<>]/g,'')}
-function identityAuthor(value){return identityText(value).replace(/^(?:中|英|美|法|德|俄|日|意|西|奥|加|澳|印|韩|苏)/,'').replace(/著|编著|主编|编|译者|翻译|译|作者/g,'')}
-function bookIdentityValue(book){const isbn=String(book?.isbn||'').replace(/[^0-9xX]/g,'').toUpperCase();if(isbn.length===10||isbn.length===13)return`isbn:${isbn}`;const title=identityText(book?.title||book?.name||book?.file),author=identityAuthor(book?.author||book?.authorName);return title?`text:${title}|${author}`:''}
-function crossSourceMatch(a,b){const as=new Set(a?.sources||[]),bs=new Set(b?.sources||[]);if(!(as.has('moon')&&bs.has('weread')||as.has('weread')&&bs.has('moon')))return false;const ai=String(a?.isbn||'').replace(/[^0-9xX]/g,'').toUpperCase(),bi=String(b?.isbn||'').replace(/[^0-9xX]/g,'').toUpperCase();if(ai&&bi&&(ai.length===10||ai.length===13)&&(bi.length===10||bi.length===13))return ai===bi;const at=identityText(a?.title||a?.file),bt=identityText(b?.title||b?.file);if(!at||at!==bt)return false;const aa=identityAuthor(a?.author),ba=identityAuthor(b?.author);return!aa||!ba||aa===ba||aa.includes(ba)||ba.includes(aa)}
-function sameSourceDuplicate(a,b){const as=new Set(a?.sources||[]),bs=new Set(b?.sources||[]),aw=String(a?.weReadBookId||''),bw=String(b?.weReadBookId||'');if(aw&&bw&&aw===bw)return true;if(!(as.has('moon')&&bs.has('moon')))return false;const af=canonicalFile(a?.file||a?.moonPath),bf=canonicalFile(b?.file||b?.moonPath);return Boolean(af&&bf&&af===bf)}
+const $ = (id) => document.getElementById(id),
+  pad = (n) => String(n).padStart(2, '0');
+const dateKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const parseDate = (s) => {
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+const addDays = (d, n) => {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+};
+const today = new Date(),
+  todayKey = dateKey(today),
+  STORAGE = 'yueji-archive-v1',
+  DEMO_OPTIN = 'yueji-demo-optin-v1',
+  HIGHLIGHTS_PENDING = 'yueji-highlights-pending-v1';
+const HIGHLIGHTS_DB = 'yueji-highlights-v1',
+  HIGHLIGHTS_STORE = 'highlights',
+  HIGHLIGHTS_TRASH_STORE = 'highlightTrash',
+  HIGHLIGHTS_TRASH_ROW_STORE = 'highlightTrashRows',
+  HIGHLIGHTS_STAGE_STORE = 'highlightStage',
+  HIGHLIGHTS_TRASH_STAGE_STORE = 'highlightTrashStage';
+let highlightsDbReady = false,
+  highlightsCountCache = 0,
+  highlightBookCountsCache = new Map(),
+  highlightsWriteQueue = Promise.resolve(),
+  sessionDateIndex = null,
+  dataRevision = 0;
+const palette = ['#5f8f7b', '#567fae', '#9272ad', '#c87d95', '#c88955', '#7d7065'];
+const emptyState = () => ({
+  source: '尚未导入数据',
+  accent: '#5f8f7b',
+  books: [],
+  sessions: [],
+  journals: {},
+  highlights: [],
+  importedAt: '',
+});
+const demo = {
+  source: '演示数据',
+  accent: '#5f8f7b',
+  books: [
+    {
+      key: 'crime',
+      title: '罪与罚',
+      file: '罪与罚.epub',
+      author: '陀思妥耶夫斯基',
+      category: '文学',
+      country: '俄罗斯',
+      birth: 1821,
+      progress: 38,
+      status: 'reading',
+      minutes: 426,
+      words: 93000,
+      days: 8,
+      color: '#6f5b4e',
+    },
+    {
+      key: 'art',
+      title: '艺术的故事',
+      file: '艺术的故事.azw3',
+      author: 'E. H. 贡布里希',
+      category: '艺术',
+      country: '英国',
+      birth: 1909,
+      progress: 16,
+      status: 'reading',
+      minutes: 188,
+      words: 41000,
+      days: 5,
+      color: '#66788d',
+    },
+    {
+      key: 'deadpool',
+      title: 'Deadpool Classic',
+      file: 'Deadpool Classic.cbz',
+      author: 'Fabian Nicieza',
+      category: '漫画',
+      country: '美国',
+      birth: 1961,
+      progress: 27,
+      status: 'reading',
+      minutes: 246,
+      words: 18000,
+      days: 6,
+      color: '#934f4f',
+    },
+    {
+      key: 'stranger',
+      title: '局外人',
+      file: '局外人.epub',
+      author: '阿尔贝·加缪',
+      category: '文学',
+      country: '法国',
+      birth: 1913,
+      progress: 100,
+      status: 'done',
+      minutes: 220,
+      words: 52000,
+      days: 4,
+      color: '#8b8662',
+    },
+  ],
+  sessions: [],
+  journals: {},
+  importedAt: '',
+};
+for (let i = 0; i < 18; i++) {
+  const d = addDays(today, -i * 2);
+  const b = demo.books[i % demo.books.length];
+  demo.sessions.push({
+    date: dateKey(d),
+    bookKey: b.key,
+    minutes: 18 + ((i * 7) % 49),
+    words: 1800 + ((i * 733) % 5200),
+  });
+}
+demo.journals[todayKey] = {
+  date: todayKey,
+  bookKey: 'crime',
+  read: true,
+  what: '《罪与罚》第三章',
+  quote: '人能够适应一切。',
+  thought:
+    '越往下读越觉得，拉斯柯尔尼科夫真正承受不住的并不是罪，而是他无法继续相信自己对罪的解释。',
+};
+let state = load();
+let page = 'today',
+  libraryFilter = 'all';
+let archiveOperation = '';
+function beginArchiveOperation(name) {
+  if (archiveOperation || window.__yuejiWeReadSyncing) {
+    toast(window.__yuejiWeReadSyncing ? '请先暂停微信读书同步' : '已有数据任务正在处理');
+    return false;
+  }
+  archiveOperation = name;
+  window.__yuejiArchiveBusy = true;
+  return true;
+}
+function endArchiveOperation(name) {
+  if (archiveOperation === name) {
+    archiveOperation = '';
+    window.__yuejiArchiveBusy = false;
+  }
+}
+function clone(v) {
+  return JSON.parse(JSON.stringify(v));
+}
+function isUntouchedDemo(x) {
+  const keys = ['crime', 'art', 'deadpool', 'stranger'];
+  return (
+    x?.source === '演示数据' &&
+    Array.isArray(x.books) &&
+    x.books.length === 4 &&
+    keys.every((k) => x.books.some((b) => b.key === k)) &&
+    Array.isArray(x.sessions) &&
+    x.sessions.length === 18
+  );
+}
+function load() {
+  try {
+    const x = JSON.parse(localStorage.getItem(STORAGE));
+    if (x && (!isUntouchedDemo(x) || localStorage.getItem(DEMO_OPTIN) === '1')) return normalize(x);
+    if (isUntouchedDemo(x)) localStorage.removeItem(STORAGE);
+  } catch (e) {}
+  return emptyState();
+}
+function normalize(x = {}) {
+  return {
+    ...emptyState(),
+    ...x,
+    books: Array.isArray(x.books) ? x.books : [],
+    sessions: Array.isArray(x.sessions) ? x.sessions : [],
+    journals: x.journals && typeof x.journals === 'object' ? x.journals : {},
+    highlights: Array.isArray(x.highlights) ? x.highlights : [],
+  };
+}
+function identityText(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/\.(epub|mobi|azw3?|pdf|txt|cbz|cbr)$/i, '')
+    .replace(/[\s·•:：,，.。!！?？'"“”‘’\-—_()（）\[\]【】《》〈〉<>]/g, '');
+}
+function identityAuthor(value) {
+  return identityText(value)
+    .replace(/^(?:中|英|美|法|德|俄|日|意|西|奥|加|澳|印|韩|苏)/, '')
+    .replace(/著|编著|主编|编|译者|翻译|译|作者/g, '');
+}
+function bookIdentityValue(book) {
+  const isbn = String(book?.isbn || '')
+    .replace(/[^0-9xX]/g, '')
+    .toUpperCase();
+  if (isbn.length === 10 || isbn.length === 13) return `isbn:${isbn}`;
+  const title = identityText(book?.title || book?.name || book?.file),
+    author = identityAuthor(book?.author || book?.authorName);
+  return title ? `text:${title}|${author}` : '';
+}
+function crossSourceMatch(a, b) {
+  const as = new Set(a?.sources || []),
+    bs = new Set(b?.sources || []);
+  if (!((as.has('moon') && bs.has('weread')) || (as.has('weread') && bs.has('moon')))) return false;
+  const ai = String(a?.isbn || '')
+      .replace(/[^0-9xX]/g, '')
+      .toUpperCase(),
+    bi = String(b?.isbn || '')
+      .replace(/[^0-9xX]/g, '')
+      .toUpperCase();
+  if (ai && bi && (ai.length === 10 || ai.length === 13) && (bi.length === 10 || bi.length === 13))
+    return ai === bi;
+  const at = identityText(a?.title || a?.file),
+    bt = identityText(b?.title || b?.file);
+  if (!at || at !== bt) return false;
+  const aa = identityAuthor(a?.author),
+    ba = identityAuthor(b?.author);
+  return !aa || !ba || aa === ba || aa.includes(ba) || ba.includes(aa);
+}
+function sameSourceDuplicate(a, b) {
+  const as = new Set(a?.sources || []),
+    bs = new Set(b?.sources || []),
+    aw = String(a?.weReadBookId || ''),
+    bw = String(b?.weReadBookId || '');
+  if (aw && bw && aw === bw) return true;
+  if (!(as.has('moon') && bs.has('moon'))) return false;
+  const af = canonicalFile(a?.file || a?.moonPath),
+    bf = canonicalFile(b?.file || b?.moonPath);
+  return Boolean(af && bf && af === bf);
+}
 // Importers may safely collapse a duplicate they created themselves. A match
 // across WeRead and Moon Reader is only a suggestion until the user confirms it.
-function shouldReconcileBooks(a,b){return sameSourceDuplicate(a,b)}
-function mergedCrossSourceBook(keep,drop){const manual=keep.progressSource==='manual'||keep.manualProgress?keep:drop.progressSource==='manual'||drop.manualProgress?drop:null,sources=[...new Set([...(keep.sources||[]),...(drop.sources||[])])],preferredTitle=keep.title&&!/^未命名/.test(keep.title)?keep.title:drop.title,preferredAuthor=keep.author||drop.author,preferredCategory=keep.category&&keep.category!=='未分类'?keep.category:drop.category,latestTrace=[keep.weReadLastRead,drop.weReadLastRead].filter(Boolean).sort().at(-1),latestShelfTrace=[keep.weReadShelfReadUpdate,drop.weReadShelfReadUpdate].filter(Boolean).sort().at(-1);return{...drop,...keep,key:keep.key,title:preferredTitle||drop.file||'未命名书籍',author:preferredAuthor||'',category:preferredCategory||'未分类',sources,weReadBookId:keep.weReadBookId||drop.weReadBookId,weReadCover:keep.weReadCover||drop.weReadCover,weReadLastRead:latestTrace,weReadShelfReadUpdate:latestShelfTrace,cover:keep.cover||drop.cover,isbn:keep.isbn||drop.isbn,file:keep.file||drop.file,moonPath:keep.moonPath||drop.moonPath,moonId:keep.moonId||drop.moonId,minutes:Math.max(+keep.minutes||0,+drop.minutes||0),words:Math.max(+keep.words||0,+drop.words||0),days:Math.max(+keep.days||0,+drop.days||0),weReadSeconds:Math.max(+keep.weReadSeconds||0,+drop.weReadSeconds||0),weReadProgress:Math.max(+keep.weReadProgress||0,+drop.weReadProgress||0),progress:manual?+manual.progress||0:Math.max(+keep.progress||0,+drop.progress||0),progressSource:manual?'manual':keep.progressSource||drop.progressSource,status:(manual?+manual.progress:Math.max(+keep.progress||0,+drop.progress||0))>=99.95?'done':(manual?+manual.progress:Math.max(+keep.progress||0,+drop.progress||0))>0?'reading':keep.status||drop.status||'unread',finishedDate:keep.finishedDate||drop.finishedDate,weReadSnapshots:[...new Map([...(keep.weReadSnapshots||[]),...(drop.weReadSnapshots||[])].map(x=>[`${x?.at||x?.date||''}|${x?.seconds||x?.minutes||''}`,x])).values()]}}
-const mergeBookBase=mergedCrossSourceBook;
-mergedCrossSourceBook=function(keep,drop){
-  const combined=mergeBookBase(keep,drop),sources=new Set([...(keep.sources||[]),...(drop.sources||[])]);
-  if(sources.has('moon')&&sources.has('weread')){
-    const clean=value=>{const copy=clone(value);delete copy.sourceArchives;return copy};
-    const previous={...(keep.sourceArchives||{}),...(drop.sourceArchives||{})};
-    combined.sourceArchives={
-      moon:previous.moon||clean((keep.sources||[]).includes('moon')?keep:drop),
-      weread:previous.weread||clean((keep.sources||[]).includes('weread')?keep:drop)
+function shouldReconcileBooks(a, b) {
+  return sameSourceDuplicate(a, b);
+}
+function mergedCrossSourceBook(keep, drop) {
+  const manual =
+      keep.progressSource === 'manual' || keep.manualProgress
+        ? keep
+        : drop.progressSource === 'manual' || drop.manualProgress
+          ? drop
+          : null,
+    sources = [...new Set([...(keep.sources || []), ...(drop.sources || [])])],
+    preferredTitle = keep.title && !/^未命名/.test(keep.title) ? keep.title : drop.title,
+    preferredAuthor = keep.author || drop.author,
+    preferredCategory = keep.category && keep.category !== '未分类' ? keep.category : drop.category,
+    latestTrace = [keep.weReadLastRead, drop.weReadLastRead].filter(Boolean).sort().at(-1),
+    latestShelfTrace = [keep.weReadShelfReadUpdate, drop.weReadShelfReadUpdate]
+      .filter(Boolean)
+      .sort()
+      .at(-1);
+  return {
+    ...drop,
+    ...keep,
+    key: keep.key,
+    title: preferredTitle || drop.file || '未命名书籍',
+    author: preferredAuthor || '',
+    category: preferredCategory || '未分类',
+    sources,
+    weReadBookId: keep.weReadBookId || drop.weReadBookId,
+    weReadCover: keep.weReadCover || drop.weReadCover,
+    weReadLastRead: latestTrace,
+    weReadShelfReadUpdate: latestShelfTrace,
+    cover: keep.cover || drop.cover,
+    isbn: keep.isbn || drop.isbn,
+    file: keep.file || drop.file,
+    moonPath: keep.moonPath || drop.moonPath,
+    moonId: keep.moonId || drop.moonId,
+    minutes: Math.max(+keep.minutes || 0, +drop.minutes || 0),
+    words: Math.max(+keep.words || 0, +drop.words || 0),
+    days: Math.max(+keep.days || 0, +drop.days || 0),
+    weReadSeconds: Math.max(+keep.weReadSeconds || 0, +drop.weReadSeconds || 0),
+    weReadProgress: Math.max(+keep.weReadProgress || 0, +drop.weReadProgress || 0),
+    progress: manual ? +manual.progress || 0 : Math.max(+keep.progress || 0, +drop.progress || 0),
+    progressSource: manual ? 'manual' : keep.progressSource || drop.progressSource,
+    status:
+      (manual ? +manual.progress : Math.max(+keep.progress || 0, +drop.progress || 0)) >= 99.95
+        ? 'done'
+        : (manual ? +manual.progress : Math.max(+keep.progress || 0, +drop.progress || 0)) > 0
+          ? 'reading'
+          : keep.status || drop.status || 'unread',
+    finishedDate: keep.finishedDate || drop.finishedDate,
+    weReadSnapshots: [
+      ...new Map(
+        [...(keep.weReadSnapshots || []), ...(drop.weReadSnapshots || [])].map((x) => [
+          `${x?.at || x?.date || ''}|${x?.seconds || x?.minutes || ''}`,
+          x,
+        ]),
+      ).values(),
+    ],
+  };
+}
+const mergeBookBase = mergedCrossSourceBook;
+mergedCrossSourceBook = function (keep, drop) {
+  const combined = mergeBookBase(keep, drop),
+    sources = new Set([...(keep.sources || []), ...(drop.sources || [])]);
+  if (sources.has('moon') && sources.has('weread')) {
+    const clean = (value) => {
+      const copy = clone(value);
+      delete copy.sourceArchives;
+      return copy;
+    };
+    const previous = { ...(keep.sourceArchives || {}), ...(drop.sourceArchives || {}) };
+    combined.sourceArchives = {
+      moon: previous.moon || clean((keep.sources || []).includes('moon') ? keep : drop),
+      weread: previous.weread || clean((keep.sources || []).includes('weread') ? keep : drop),
     };
   }
   return combined;
 };
-function reconcileCrossSourceBooksInMemory(){const keyMap=new Map(),merged=[];for(const candidate of state.books||[]){const index=merged.findIndex(existing=>shouldReconcileBooks(existing,candidate));if(index<0){merged.push(candidate);continue}const existing=merged[index],keep=(existing.sources||[]).includes('moon')?existing:candidate,drop=keep===existing?candidate:existing;merged[index]=mergedCrossSourceBook(keep,drop);keyMap.set(String(drop.key),String(keep.key))}if(!keyMap.size)return{changed:false,keyMap,books:state.books};const resolveKey=key=>{let next=String(key||''),guard=0;while(keyMap.has(next)&&guard++<20)next=keyMap.get(next);return next};state.books=merged;state.sessions=(state.sessions||[]).map(s=>s.bookKey?{...s,bookKey:resolveKey(s.bookKey)}:s);Object.values(state.journals||{}).forEach(j=>{if(j?.bookKey)j.bookKey=resolveKey(j.bookKey)});state.highlights=(state.highlights||[]).map(h=>h.bookKey?{...h,bookKey:resolveKey(h.bookKey)}:h);return{changed:true,keyMap:new Map([...keyMap].map(([from,to])=>[from,resolveKey(to)])),books:merged}}
-async function reconcileCrossSourceBooks(){const before=clone(state);try{const result=reconcileCrossSourceBooksInMemory();if(!result.changed)return result;if(highlightsDbReady)await remapHighlightsBookKeys(result.keyMap);window.yuejiRefreshWeReadBookIndexes?.();save();return result}catch(error){state=before;window.yuejiRefreshWeReadBookIndexes?.();throw error}}
-async function mergeConfirmedBookPair(firstKey,secondKey){const before=clone(state),first=book(firstKey),second=book(secondKey);if(!first||!second||first.key===second.key)throw new Error('BOOK_PAIR_MISSING');const keep=(first.sources||[]).includes('moon')?first:(second.sources||[]).includes('moon')?second:first,drop=keep===first?second:first,keyMap=new Map([[String(drop.key),String(keep.key)]]),removedWeReadIds=[first.weReadBookId,second.weReadBookId].filter(Boolean);let combined;try{combined=mergedCrossSourceBook(keep,drop);state.books=state.books.filter(b=>b.key!==drop.key).map(b=>b.key===keep.key?combined:b);state.sessions=state.sessions.map(s=>s.bookKey===drop.key?{...s,bookKey:keep.key}:s);Object.values(state.journals||{}).forEach(j=>{if(j?.bookKey===drop.key)j.bookKey=keep.key});state.highlights=(state.highlights||[]).map(h=>h.bookKey===drop.key?{...h,bookKey:keep.key}:h);if(highlightsDbReady)await remapHighlightsBookKeys(keyMap);window.yuejiRefreshWeReadBookIndexes?.();save()}catch(error){state=before;window.yuejiRefreshWeReadBookIndexes?.();throw error}try{await window.yuejiPersistMergedWeReadBook?.({book:combined,removedWeReadIds,fromKey:String(drop.key),toKey:String(keep.key)})}catch(error){console.warn('合并结果暂未写入微信缓存，将在下次同步时补写',error)}return combined}
-window.yuejiBookIdentity=bookIdentityValue;window.yuejiCrossSourceMatch=crossSourceMatch;window.yuejiReconcileCrossSourceBooks=reconcileCrossSourceBooks;
-window.yuejiMergeConfirmedBookPair=mergeConfirmedBookPair;
-async function remapSourceHighlightsBookKey(fromKey,toKey,source){if(!highlightsDbReady)return;return queueHighlightWrite(async()=>{const db=await highlightDb();try{const tx=db.transaction(HIGHLIGHTS_STORE,'readwrite'),done=idbTxDone(tx,'分离跨平台书摘失败'),store=tx.objectStore(HIGHLIGHTS_STORE),cursor=store.index('bookKey').openCursor(IDBKeyRange.only(String(fromKey)));cursor.onsuccess=()=>{const row=cursor.result;if(!row)return;const value=row.value;if(value?.source===source||source==='weread'&&value?.bookmark==='__YUEJI_WEREAD__')row.update(stableHighlight({...value,bookKey:String(toKey)}));row.continue()};cursor.onerror=()=>tx.abort();await done;await rebuildHighlightBookCountsDb(db);highlightsCountCache=await countHighlightsDb(db);state.highlightsCount=highlightsCountCache}finally{db.close()}})}
-function withoutKeys(value,keys){const copy={...value};keys.forEach(key=>delete copy[key]);return copy}
-async function splitMergedBook(bookKey){const before=clone(state),combined=book(bookKey),sources=new Set(combined?.sources||[]),bookId=String(combined?.weReadBookId||'');if(!combined||!sources.has('moon')||!sources.has('weread')||!bookId)throw new Error('MERGED_BOOK_MISSING');const shelf=(state.weRead?.shelfBooks||[]).find(row=>String(row?.bookId||'')===bookId)||{},weReadKey=`wr:${bookId}`,moon=withoutKeys({...combined,sources:['moon']},['weReadBookId','weReadSeconds','weReadProgress','weReadLastRead','weReadShelfReadUpdate','weReadCover','weReadSnapshots','weReadProgressEvidence','readUpdateTime','finishReading']),weread=withoutKeys({...combined,key:weReadKey,title:shelf.title||shelf.name||combined.title,author:shelf.author||shelf.authorName||combined.author,category:shelf.category||combined.category||'未分类',cover:shelf.cover||combined.weReadCover||'',sources:['weread'],file:'',minutes:0,words:0,days:0,progress:+combined.weReadProgress||0,status:(+combined.weReadProgress||0)>=99.95?'done':(+combined.weReadProgress||0)>0?'reading':'unread'},['moonPath','moonId','manualProgress']);try{state.books=state.books.flatMap(row=>row.key===combined.key?[moon,weread]:row);state.sessions=state.sessions.map(row=>row.bookKey===combined.key&&row.source==='weread'?{...row,bookKey:weReadKey}:row);state.highlights=(state.highlights||[]).map(row=>row.bookKey===combined.key&&(row.source==='weread'||row.bookmark==='__YUEJI_WEREAD__')?{...row,bookKey:weReadKey}:row);if(highlightsDbReady)await remapSourceHighlightsBookKey(combined.key,weReadKey,'weread');await window.yuejiPersistSplitWeReadBook?.(weread);window.yuejiRefreshWeReadBookIndexes?.();save();return{moon,weread}}catch(error){state=before;if(highlightsDbReady)try{await remapSourceHighlightsBookKey(weReadKey,combined.key,'weread')}catch{}window.yuejiRefreshWeReadBookIndexes?.();try{save()}catch{}throw error}}
-const splitMergedBookFallback=splitMergedBook;
-async function splitMergedBookLossless(bookKey){
-  const combined=book(bookKey),archives=combined?.sourceArchives;
-  if(!archives?.moon||!archives?.weread)return splitMergedBookFallback(bookKey);
-  const before=clone(state),moon={...clone(archives.moon),sources:['moon']},weread={...clone(archives.weread),sources:['weread']};
-  delete moon.sourceArchives;delete weread.sourceArchives;
-  const oldKey=String(combined.key),moonKeyValue=String(moon.key||oldKey),wereadKey=String(weread.key||`wr:${combined.weReadBookId}`);
-  moon.key=moonKeyValue;weread.key=wereadKey;
-  try{
-    state.books=state.books.flatMap(row=>row.key===oldKey?[moon,weread]:row);
-    state.sessions=state.sessions.map(row=>row.bookKey!==oldKey?row:{...row,bookKey:row.source==='weread'?wereadKey:moonKeyValue});
-    Object.values(state.journals||{}).forEach(row=>{if(row?.bookKey===oldKey)row.bookKey=moonKeyValue});
-    state.highlights=(state.highlights||[]).map(row=>row.bookKey!==oldKey?row:{...row,bookKey:row.source==='weread'||row.bookmark==='__YUEJI_WEREAD__'?wereadKey:moonKeyValue});
-    if(highlightsDbReady)await remapSourceHighlightsBookKey(oldKey,wereadKey,'weread');
-    await window.yuejiPersistSplitWeReadBook?.(weread);window.yuejiRefreshWeReadBookIndexes?.();save();return{moon,weread};
-  }catch(error){state=before;if(highlightsDbReady)try{await remapSourceHighlightsBookKey(wereadKey,oldKey,'weread')}catch{}window.yuejiRefreshWeReadBookIndexes?.();try{save()}catch{}throw error}
+function reconcileCrossSourceBooksInMemory() {
+  const keyMap = new Map(),
+    merged = [];
+  for (const candidate of state.books || []) {
+    const index = merged.findIndex((existing) => shouldReconcileBooks(existing, candidate));
+    if (index < 0) {
+      merged.push(candidate);
+      continue;
+    }
+    const existing = merged[index],
+      keep = (existing.sources || []).includes('moon') ? existing : candidate,
+      drop = keep === existing ? candidate : existing;
+    merged[index] = mergedCrossSourceBook(keep, drop);
+    keyMap.set(String(drop.key), String(keep.key));
+  }
+  if (!keyMap.size) return { changed: false, keyMap, books: state.books };
+  const resolveKey = (key) => {
+    let next = String(key || ''),
+      guard = 0;
+    while (keyMap.has(next) && guard++ < 20) next = keyMap.get(next);
+    return next;
+  };
+  state.books = merged;
+  state.sessions = (state.sessions || []).map((s) =>
+    s.bookKey ? { ...s, bookKey: resolveKey(s.bookKey) } : s,
+  );
+  Object.values(state.journals || {}).forEach((j) => {
+    if (j?.bookKey) j.bookKey = resolveKey(j.bookKey);
+  });
+  state.highlights = (state.highlights || []).map((h) =>
+    h.bookKey ? { ...h, bookKey: resolveKey(h.bookKey) } : h,
+  );
+  return {
+    changed: true,
+    keyMap: new Map([...keyMap].map(([from, to]) => [from, resolveKey(to)])),
+    books: merged,
+  };
 }
-window.yuejiSplitMergedBook=splitMergedBookLossless;
-function highlightDb(){return new Promise((resolve,reject)=>{let settled=false;const req=indexedDB.open(HIGHLIGHTS_DB,6),fail=error=>{if(settled)return;settled=true;reject(error)};req.onupgradeneeded=()=>{const db=req.result,tx=req.transaction,store=db.objectStoreNames.contains(HIGHLIGHTS_STORE)?tx.objectStore(HIGHLIGHTS_STORE):db.createObjectStore(HIGHLIGHTS_STORE,{keyPath:'id'});if(!store.indexNames.contains('bookKey'))store.createIndex('bookKey','bookKey',{unique:false});if(!store.indexNames.contains('date'))store.createIndex('date','date',{unique:false});if(!store.indexNames.contains('source'))store.createIndex('source','source',{unique:false});if(!store.indexNames.contains('sortTime'))store.createIndex('sortTime','sortTime',{unique:false});if(!store.indexNames.contains('bookSort'))store.createIndex('bookSort',['bookKey','sortTime'],{unique:false});if(!store.indexNames.contains('kind'))store.createIndex('kind','kind',{unique:false});const legacyTrash=db.objectStoreNames.contains(HIGHLIGHTS_TRASH_STORE)?tx.objectStore(HIGHLIGHTS_TRASH_STORE):db.createObjectStore(HIGHLIGHTS_TRASH_STORE,{keyPath:'bookKey'}),trashRows=db.objectStoreNames.contains(HIGHLIGHTS_TRASH_ROW_STORE)?tx.objectStore(HIGHLIGHTS_TRASH_ROW_STORE):db.createObjectStore(HIGHLIGHTS_TRASH_ROW_STORE,{keyPath:'trashId'});if(!trashRows.indexNames.contains('bookKey'))trashRows.createIndex('bookKey','bookKey',{unique:false});if(!db.objectStoreNames.contains(HIGHLIGHTS_STAGE_STORE))db.createObjectStore(HIGHLIGHTS_STAGE_STORE,{keyPath:'id'});if(!db.objectStoreNames.contains(HIGHLIGHTS_TRASH_STAGE_STORE))db.createObjectStore(HIGHLIGHTS_TRASH_STAGE_STORE,{keyPath:'trashId'});if(req.oldVersion>0&&req.oldVersion<3){const cursor=store.openCursor();cursor.onsuccess=()=>{const c=cursor.result;if(!c)return;c.update(stableHighlight(c.value));c.continue()}}if(req.oldVersion>0&&req.oldVersion<5){const cursor=legacyTrash.openCursor();cursor.onsuccess=()=>{const c=cursor.result;if(!c)return;const bookKey=String(c.value?.bookKey||'');(c.value?.items||[]).forEach((h,i)=>trashRows.put(trashHighlight(h,bookKey,i)));c.continue()}}};req.onsuccess=()=>{if(settled){req.result.close();return}settled=true;resolve(req.result)};req.onerror=()=>fail(req.error);req.onblocked=()=>fail(new Error('书摘数据库被其他页面占用'))})}
-function stableHighlight(h,i=0){const base={...(h||{})};if(!base.source)base.source=base.bookmark==='__YUEJI_WEREAD__'?'weread':'moon';if(!base.id){const text=`${base.bookKey||''}|${base.time||base.date||''}|${base.quote||''}|${base.note||''}|${i}`;let hash=2166136261;for(const c of text){hash^=c.codePointAt(0);hash=Math.imul(hash,16777619)}base.id=`legacy-${(hash>>>0).toString(36)}`}const parsed=typeof base.date==='string'&&/^\d{4}-\d{1,2}-\d{1,2}$/.test(base.date)?parseDate(base.date).getTime():0;base.bookKey=String(base.bookKey||'');base.sortTime=Number(base.time)||(!Number.isNaN(parsed)?parsed:0);base.kind=String(base.note||'').trim()?String(base.quote||'').trim()?'mixed':'thought':'quote';base.searchText=`${base.quote||''} ${base.note||''} ${base.bookmark||''}`.toLowerCase();return base}
-function trashHighlight(h,bookKey,i=0){const row=stableHighlight({...h,bookKey},i);return{...row,trashId:`${bookKey}|${row.id}`}}
-async function readHighlightsDb(){const db=await highlightDb();try{return await new Promise((resolve,reject)=>{const req=db.transaction(HIGHLIGHTS_STORE).objectStore(HIGHLIGHTS_STORE).getAll();req.onsuccess=()=>resolve(req.result||[]);req.onerror=()=>reject(req.error)})}finally{db.close()}}
-async function readHighlightTrashDb(){const db=await highlightDb();try{return await new Promise((resolve,reject)=>{const req=db.transaction(HIGHLIGHTS_TRASH_ROW_STORE).objectStore(HIGHLIGHTS_TRASH_ROW_STORE).openCursor(),groups=new Map();req.onsuccess=()=>{const c=req.result;if(!c)return resolve([...groups].map(([bookKey,items])=>({bookKey,items})));const row=c.value,bookKey=String(row.bookKey||'');if(!groups.has(bookKey))groups.set(bookKey,[]);const {trashId,...highlight}=row;groups.get(bookKey).push(highlight);c.continue()};req.onerror=()=>reject(req.error)})}finally{db.close()}}
-async function countHighlightsDb(db){return await new Promise((resolve,reject)=>{const req=db.transaction(HIGHLIGHTS_STORE).objectStore(HIGHLIGHTS_STORE).count();req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}
-async function countStoreDb(db,storeName){return await new Promise((resolve,reject)=>{const req=db.transaction(storeName).objectStore(storeName).count();req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}
-async function countHighlightsForBooksDb(db,bookKeys){const keys=[...new Set((bookKeys||[]).map(String).filter(Boolean))],index=db.transaction(HIGHLIGHTS_STORE).objectStore(HIGHLIGHTS_STORE).index('bookKey');await Promise.all(keys.map(key=>new Promise((resolve,reject)=>{const req=index.count(IDBKeyRange.only(key));req.onsuccess=()=>{highlightBookCountsCache.set(key,req.result);resolve()};req.onerror=()=>reject(req.error)})))}
-async function rebuildHighlightBookCountsDb(db){const counts=new Map();await new Promise((resolve,reject)=>{const req=db.transaction(HIGHLIGHTS_STORE).objectStore(HIGHLIGHTS_STORE).index('bookKey').openKeyCursor();req.onsuccess=()=>{const c=req.result;if(!c)return resolve();const key=String(c.key||'');if(key)counts.set(key,(counts.get(key)||0)+1);c.continue()};req.onerror=()=>reject(req.error)});highlightBookCountsCache=counts}
-function queueHighlightWrite(work){const next=highlightsWriteQueue.then(work,work);highlightsWriteQueue=next.catch(()=>{});return next}
-function idbTxDone(tx,message){return new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error||new Error(message));tx.onabort=()=>reject(tx.error||new Error(message))})}
-async function writeHighlightsDb(items){const source=Array.isArray(items)?items:[];if(!source.length)return;return queueHighlightWrite(async()=>{const db=await highlightDb();try{let tx=db.transaction(HIGHLIGHTS_STAGE_STORE,'readwrite'),done=idbTxDone(tx,'书摘暂存区无法清理');tx.objectStore(HIGHLIGHTS_STAGE_STORE).clear();await done;await stageHighlightRows(db,HIGHLIGHTS_STAGE_STORE,source);tx=db.transaction([HIGHLIGHTS_STORE,HIGHLIGHTS_STAGE_STORE],'readwrite');done=idbTxDone(tx,'书摘提交失败');const target=tx.objectStore(HIGHLIGHTS_STORE),stage=tx.objectStore(HIGHLIGHTS_STAGE_STORE),cursor=stage.openCursor();cursor.onsuccess=()=>{const c=cursor.result;if(c){target.put(c.value);c.continue()}else stage.clear()};cursor.onerror=()=>tx.abort();await done;highlightsCountCache=await countHighlightsDb(db);await countHighlightsForBooksDb(db,source.map(x=>x?.bookKey));state.highlightsCount=highlightsCountCache}finally{db.close()}})}
-async function putHighlightsDb(items){return writeHighlightsDb(items)}
-async function remapHighlightsBookKeys(keyMap){const entries=[...keyMap.entries()].filter(([from,to])=>from&&to&&from!==to);if(!entries.length||!highlightsDbReady)return;return queueHighlightWrite(async()=>{const db=await highlightDb();try{const tx=db.transaction(HIGHLIGHTS_STORE,'readwrite'),done=idbTxDone(tx,'跨平台书摘归并失败'),index=tx.objectStore(HIGHLIGHTS_STORE).index('bookKey');for(const [from,to] of entries){const req=index.openCursor(IDBKeyRange.only(String(from)));req.onsuccess=()=>{const cursor=req.result;if(!cursor)return;cursor.update(stableHighlight({...cursor.value,bookKey:String(to)}));cursor.continue()};req.onerror=()=>tx.abort()}await done;await rebuildHighlightBookCountsDb(db);highlightsCountCache=await countHighlightsDb(db);state.highlightsCount=highlightsCountCache}finally{db.close()}})}
-async function clearHighlightStages(db){const tx=db.transaction([HIGHLIGHTS_STAGE_STORE,HIGHLIGHTS_TRASH_STAGE_STORE],'readwrite'),done=idbTxDone(tx,'书摘暂存区无法清理');tx.objectStore(HIGHLIGHTS_STAGE_STORE).clear();tx.objectStore(HIGHLIGHTS_TRASH_STAGE_STORE).clear();await done}
-async function stageHighlightRows(db,storeName,rows,trashBookKey=''){for(let start=0;start<rows.length;start+=250){const tx=db.transaction(storeName,'readwrite'),done=idbTxDone(tx,'书摘分批暂存被中止'),store=tx.objectStore(storeName),end=Math.min(rows.length,start+250);for(let i=start;i<end;i++)store.put(trashBookKey?trashHighlight(rows[i],trashBookKey,i):stableHighlight(rows[i],i));await done;await new Promise(resolve=>setTimeout(resolve,0))}}
-async function stageTrashRecords(db,records){for(const item of records||[]){const bookKey=String(item?.book?.key||item?.bookKey||'');if(bookKey)await stageHighlightRows(db,HIGHLIGHTS_TRASH_STAGE_STORE,item.highlights||item.items||[],bookKey)}}
-function markHighlightReplaceStaged(){try{const pending=JSON.parse(localStorage.getItem(HIGHLIGHTS_PENDING));if(pending){pending.phase='staged';localStorage.setItem(HIGHLIGHTS_PENDING,JSON.stringify(pending))}}catch{}}
-async function replaceHighlightsDb(items,trashRecords){const source=Array.isArray(items)?items:[],replaceTrash=Array.isArray(trashRecords),trash=replaceTrash?trashRecords:[];return queueHighlightWrite(async()=>{const db=await highlightDb();try{await clearHighlightStages(db);await stageHighlightRows(db,HIGHLIGHTS_STAGE_STORE,source);if(replaceTrash)await stageTrashRecords(db,trash);const activeStaged=await countStoreDb(db,HIGHLIGHTS_STAGE_STORE),trashStaged=replaceTrash?await countStoreDb(db,HIGHLIGHTS_TRASH_STAGE_STORE):null;markHighlightReplaceStaged();await new Promise((resolve,reject)=>{const names=replaceTrash?[HIGHLIGHTS_STORE,HIGHLIGHTS_STAGE_STORE,HIGHLIGHTS_TRASH_ROW_STORE,HIGHLIGHTS_TRASH_STAGE_STORE,HIGHLIGHTS_TRASH_STORE]:[HIGHLIGHTS_STORE,HIGHLIGHTS_STAGE_STORE],tx=db.transaction(names,'readwrite'),done=idbTxDone(tx,'书摘与回收区原子替换失败'),active=tx.objectStore(HIGHLIGHTS_STORE),activeStage=tx.objectStore(HIGHLIGHTS_STAGE_STORE);active.clear();let copied=0,needed=replaceTrash?2:1;const finish=()=>{copied++;if(copied===needed){activeStage.clear();if(replaceTrash)tx.objectStore(HIGHLIGHTS_TRASH_STAGE_STORE).clear()}};const activeCursor=activeStage.openCursor();activeCursor.onsuccess=()=>{const c=activeCursor.result;if(c){active.put(c.value);c.continue()}else finish()};activeCursor.onerror=()=>tx.abort();if(replaceTrash){const trashTarget=tx.objectStore(HIGHLIGHTS_TRASH_ROW_STORE),trashStage=tx.objectStore(HIGHLIGHTS_TRASH_STAGE_STORE);trashTarget.clear();tx.objectStore(HIGHLIGHTS_TRASH_STORE).clear();const trashCursor=trashStage.openCursor();trashCursor.onsuccess=()=>{const c=trashCursor.result;if(c){trashTarget.put(c.value);c.continue()}else finish()};trashCursor.onerror=()=>tx.abort()}done.then(resolve,reject)});const activeStored=await countHighlightsDb(db),trashStored=replaceTrash?await countStoreDb(db,HIGHLIGHTS_TRASH_ROW_STORE):trashStaged;if(activeStored!==activeStaged||replaceTrash&&trashStored!==trashStaged)throw new Error('书摘与回收区写入数量校验失败');highlightsCountCache=activeStored;await rebuildHighlightBookCountsDb(db);state.highlightsCount=activeStored}finally{db.close()}})}
-async function queryHighlightsDb({bookKey='',query='',kind='all',limit=80}={}){const db=await highlightDb();try{return await new Promise((resolve,reject)=>{const tx=db.transaction(HIGHLIGHTS_STORE),store=tx.objectStore(HIGHLIGHTS_STORE),source=bookKey?store.index('bookSort'):store.index('sortTime'),range=bookKey?IDBKeyRange.bound([bookKey,0],[bookKey,Number.MAX_SAFE_INTEGER]):null,req=source.openCursor(range,'prev'),rows=[];let matched=0;const needle=String(query||'').trim().toLowerCase();req.onsuccess=()=>{const cursor=req.result;if(!cursor)return resolve({rows,hasMore:false,totalMatched:matched});const h=stableHighlight(cursor.value),kindOk=kind==='all'||kind==='quotes'&&String(h.quote||'').trim()||kind==='thoughts'&&String(h.note||'').trim(),queryOk=!needle||h.searchText.includes(needle);if(kindOk&&queryOk){matched++;if(rows.length<limit)rows.push(h);else return resolve({rows,hasMore:true,totalMatched:matched})}cursor.continue()};req.onerror=()=>reject(req.error)})}finally{db.close()}}
-async function deleteHighlightsByBook(bookKey,knownRows){const rows=Array.isArray(knownRows)?knownRows:(await queryHighlightsDb({bookKey,limit:Number.MAX_SAFE_INTEGER})).rows,db=await highlightDb();try{await new Promise((resolve,reject)=>{const tx=db.transaction(HIGHLIGHTS_STORE,'readwrite'),store=tx.objectStore(HIGHLIGHTS_STORE);rows.forEach(h=>store.delete(h.id));tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)});highlightsCountCache=await countHighlightsDb(db);highlightBookCountsCache.set(String(bookKey),0);state.highlightsCount=highlightsCountCache;return rows}finally{db.close()}}
-async function clearHighlightTrash(){const db=await highlightDb();try{const tx=db.transaction([HIGHLIGHTS_TRASH_ROW_STORE,HIGHLIGHTS_TRASH_STORE],'readwrite');tx.objectStore(HIGHLIGHTS_TRASH_ROW_STORE).clear();tx.objectStore(HIGHLIGHTS_TRASH_STORE).clear();await idbTxDone(tx,'回收区无法清理')}finally{db.close()}}
-async function deleteTrashRows(store,bookKey){return await new Promise((resolve,reject)=>{const req=store.index('bookKey').openCursor(IDBKeyRange.only(String(bookKey)));req.onsuccess=()=>{const c=req.result;if(!c)return resolve();c.delete();c.continue()};req.onerror=()=>reject(req.error)})}
-async function putHighlightTrash(bookKey,items){const key=String(bookKey),db=await highlightDb();try{let tx=db.transaction(HIGHLIGHTS_TRASH_ROW_STORE,'readwrite'),done=idbTxDone(tx,'旧回收记录清理失败');await deleteTrashRows(tx.objectStore(HIGHLIGHTS_TRASH_ROW_STORE),key);await done;tx=db.transaction(HIGHLIGHTS_TRASH_ROW_STORE,'readwrite');done=idbTxDone(tx,'回收记录保存失败');const store=tx.objectStore(HIGHLIGHTS_TRASH_ROW_STORE);(items||[]).forEach((h,i)=>store.put(trashHighlight(h,key,i)));await done}finally{db.close()}}
-async function getHighlightTrash(bookKey){const db=await highlightDb();try{return await new Promise((resolve,reject)=>{const req=db.transaction(HIGHLIGHTS_TRASH_ROW_STORE).objectStore(HIGHLIGHTS_TRASH_ROW_STORE).index('bookKey').openCursor(IDBKeyRange.only(String(bookKey))),rows=[];req.onsuccess=()=>{const c=req.result;if(!c)return resolve(rows);const {trashId,...highlight}=c.value;rows.push(highlight);c.continue()};req.onerror=()=>reject(req.error)})}finally{db.close()}}
-async function deleteHighlightTrash(bookKey){const db=await highlightDb();try{const tx=db.transaction(HIGHLIGHTS_TRASH_ROW_STORE,'readwrite'),done=idbTxDone(tx,'回收记录删除失败');await deleteTrashRows(tx.objectStore(HIGHLIGHTS_TRASH_ROW_STORE),bookKey);await done}finally{db.close()}}
-async function moveHighlightsToTrash(bookKey){const key=String(bookKey),db=await highlightDb();try{const tx=db.transaction([HIGHLIGHTS_STORE,HIGHLIGHTS_TRASH_ROW_STORE],'readwrite'),done=idbTxDone(tx,'书摘移入回收区失败'),source=tx.objectStore(HIGHLIGHTS_STORE),trash=tx.objectStore(HIGHLIGHTS_TRASH_ROW_STORE);await new Promise((resolve,reject)=>{const clear=trash.index('bookKey').openCursor(IDBKeyRange.only(key));clear.onsuccess=()=>{const old=clear.result;if(old){old.delete();old.continue();return}const move=source.index('bookKey').openCursor(IDBKeyRange.only(key));move.onsuccess=()=>{const row=move.result;if(!row)return resolve();trash.put(trashHighlight(row.value,key));row.delete();row.continue()};move.onerror=()=>reject(move.error)};clear.onerror=()=>reject(clear.error)});await done;highlightsCountCache=await countHighlightsDb(db);highlightBookCountsCache.set(key,0);state.highlightsCount=highlightsCountCache}finally{db.close()}}
-function highlightCount(items){return new Set((Array.isArray(items)?items:[]).map((h,i)=>stableHighlight(h,i).id)).size}
-function compactStateFor(value,count){const trash=(value.bookTrash||[]).map(x=>({...x,highlights:[],highlightsInDb:true})),base={...value,highlights:[],bookTrash:trash,highlightsStorage:'indexeddb-v6',highlightsCount:count};return typeof window.yuejiCompactExternalState==='function'?window.yuejiCompactExternalState(base):base}
-function compactState(){return highlightsDbReady?compactStateFor(state,highlightsCountCache):state}
-function markDataRevision(){dataRevision++;window.__yuejiDataRevision=dataRevision}
-function save(){sessionDateIndex=null;localStorage.setItem(STORAGE,JSON.stringify(compactState()));markDataRevision()}
-window.yuejiDataRevision=()=>dataRevision;
-window.yuejiMarkDataRevision=()=>{sessionDateIndex=null;markDataRevision();window.dispatchEvent(new CustomEvent('yueji:data-changed',{detail:{revision:dataRevision}}))};
-async function persistHighlights(){if(!highlightsDbReady)return;if(state.highlights?.length){await putHighlightsDb(state.highlights);state.highlights=[]}save()}
-async function recoverPendingHighlightReplace(){const raw=localStorage.getItem(HIGHLIGHTS_PENDING);let db;try{db=await highlightDb();if(!raw){const activeStage=await countStoreDb(db,HIGHLIGHTS_STAGE_STORE),trashStage=await countStoreDb(db,HIGHLIGHTS_TRASH_STAGE_STORE);if(activeStage||trashStage)await clearHighlightStages(db);return true}const pending=JSON.parse(raw);const activeStage=await countStoreDb(db,HIGHLIGHTS_STAGE_STORE),trashStage=await countStoreDb(db,HIGHLIGHTS_TRASH_STAGE_STORE),stored=await countHighlightsDb(db),trashStored=await countStoreDb(db,HIGHLIGHTS_TRASH_ROW_STORE),trashOk=pending.trashCount===undefined||trashStored===Number(pending.trashCount);if(!pending.phase){if(activeStage!==0||stored!==Number(pending.count)||!trashOk)return false}else if(pending.phase!=='staged'||activeStage>0||trashStage>0){await clearHighlightStages(db);localStorage.removeItem(HIGHLIGHTS_PENDING);return true}else if(stored!==Number(pending.count)||!trashOk)return false;const next=JSON.parse(pending.nextRaw);localStorage.setItem(STORAGE,pending.nextRaw);state=normalize(next);localStorage.removeItem(HIGHLIGHTS_PENDING);return true}catch(error){console.warn('Pending highlight replacement could not be recovered',error);return false}finally{db?.close()}}
-async function initHighlightsStorage(){if(!await recoverPendingHighlightReplace()){highlightsDbReady=false;setTimeout(()=>{try{toast('上次数据迁移尚未完成，已暂停写入；请保留当前网页数据')}catch{}},0);return}const legacy=[...(state.highlights||[])],expected=Number(state.highlightsCount)||0,wasIndexed=/^indexeddb-v/.test(state.highlightsStorage||'');try{const db=await highlightDb();let stored=await countHighlightsDb(db);await rebuildHighlightBookCountsDb(db);db.close();if(wasIndexed&&!legacy.length&&expected!==stored)throw new Error(`书摘数据库数量异常：应有 ${expected} 条，实际读取 ${stored} 条`);if(legacy.length){await putHighlightsDb(legacy);stored=highlightsCountCache}for(const item of state.bookTrash||[]){if(item?.book?.key&&item.highlights?.length)await putHighlightTrash(item.book.key,item.highlights)}highlightsCountCache=stored;state.highlightsCount=stored;state.highlights=[];highlightsDbReady=true;save();if(page==='notes')setTimeout(renderNotes,0)}catch(error){highlightsDbReady=false;state.highlights=legacy;console.warn('IndexedDB highlights unavailable; keeping legacy storage',error);setTimeout(()=>{try{toast(wasIndexed?'书摘数据库数量异常，已停止写入，请勿清理网站数据':'书摘数据库不可用，当前继续使用旧储存')}catch{}},0)}}
-window.yuejiPersistHighlights=persistHighlights;window.yuejiPutHighlights=putHighlightsDb;window.yuejiQueryHighlights=queryHighlightsDb;window.yuejiReadAllHighlights=readHighlightsDb;window.yuejiDeleteHighlightsByBook=deleteHighlightsByBook;window.yuejiMoveHighlightsToTrash=moveHighlightsToTrash;window.yuejiHighlightCount=()=>highlightsDbReady?highlightsCountCache:highlightCount(state.highlights);window.yuejiHighlightCountForBook=key=>highlightsDbReady?(highlightBookCountsCache.get(String(key))||0):(state.highlights||[]).filter(x=>String(x.bookKey)===String(key)).length;window.yuejiHighlightsDbReady=()=>highlightsDbReady;window.yuejiPutHighlightTrash=putHighlightTrash;window.yuejiGetHighlightTrash=getHighlightTrash;window.yuejiDeleteHighlightTrash=deleteHighlightTrash;
-function rgb(hex){const h=hex.replace('#','');const n=parseInt(h,16);return `${n>>16&255},${n>>8&255},${n&255}`}
-function applyAccent(){document.documentElement.style.setProperty('--accent',state.accent);document.documentElement.style.setProperty('--accent-rgb',rgb(state.accent));document.querySelectorAll('[data-color]').forEach(b=>b.classList.toggle('active',b.dataset.color===state.accent));$('customColor').value=state.accent}
-function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(window.__toast);window.__toast=setTimeout(()=>t.classList.remove('show'),1800)}
-function esc(s=''){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
-function fmtDate(key){const d=parseDate(key);return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`}
-function book(key){return state.books.find(b=>b.key===key)}
-function effectiveSessions(rows=state.sessions){const byDate=new Map();for(const s of rows||[]){if(!s?.date)continue;const day=byDate.get(s.date)||[];day.push(s);byDate.set(s.date,day)}const out=[];for(const day of byDate.values()){const hasTotal=day.some(s=>s.source==='weread'&&s.aggregate===true&&!s.bookKey);out.push(...day.filter(s=>!hasTotal||s.source!=='weread'||s.aggregate===true))}return out}
-function effectiveReadDates(rows=state.sessions,{includeJournals=true,prefix=''}={}){const effective=effectiveSessions(rows),dates=new Set(effective.map(s=>s.date).filter(Boolean));if(!prefix&&rows!==state.sessions){const months=[...new Set(effective.map(s=>String(s.date||'').slice(0,7)).filter(Boolean))];prefix=months.length===1?months[0]:months.length?'' : $('monthPicker')?.value||''}if(includeJournals)Object.values(state.journals||{}).forEach(j=>{if(j?.read&&j.date&&(!prefix||String(j.date).startsWith(prefix)))dates.add(j.date)});return dates}
-function verifiedBookDates(b){return[...new Set(window.yuejiVerifiedWeReadActivityDates?.(b)||[])].filter(Boolean).sort()}
-function manualBooksInPeriod(prefix){return Object.values(state.journals||{}).filter(j=>j?.read&&j.bookKey&&String(j.date||'').startsWith(prefix)).map(j=>String(j.bookKey))}
-window.yuejiEffectiveSessions=effectiveSessions;window.yuejiEffectiveReadDates=effectiveReadDates;window.yuejiVerifiedBookDates=verifiedBookDates;window.yuejiManualBooksInPeriod=manualBooksInPeriod;
-function dayData(key){if(!sessionDateIndex){sessionDateIndex=new Map();state.sessions.forEach(s=>{if(!s.date)return;const rows=sessionDateIndex.get(s.date)||[];rows.push(s);sessionDateIndex.set(s.date,rows)})}const ss=sessionDateIndex.get(key)||[],effective=effectiveSessions(ss),j=state.journals[key];return {sessions:ss,effectiveSessions:effective,journal:j,read:ss.length>0||!!j?.read,minutes:effective.reduce((a,b)=>a+(+b.minutes||0),0),words:effective.reduce((a,b)=>a+(+b.words||0),0),books:new Set(ss.map(s=>s.bookKey).filter(Boolean))}}
-document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>switchPage(b.dataset.go));
-function renderCalendar(){const wrap=$('challengeGrid');wrap.innerHTML='';const start=parseDate(state.challengeStart),end=parseDate(state.challengeEnd);let cur=new Date(start.getFullYear(),start.getMonth(),1),count=0,safety=0;while(cur<=end&&safety++<24){const y=cur.getFullYear(),m=cur.getMonth(),first=(new Date(y,m,1).getDay()+6)%7,last=new Date(y,m+1,0).getDate();const el=document.createElement('div');el.className='month-block';el.innerHTML=`<div class="month-name">${y!==start.getFullYear()?y+' · ':''}${m+1}月</div>`;const grid=document.createElement('div');grid.className='month-days';for(let i=0;i<first;i++){const x=document.createElement('i');x.className='cal-day out';grid.append(x)}for(let n=1;n<=last;n++){const key=dateKey(new Date(y,m,n)),dd=dayData(key);const b=document.createElement('button');b.className='cal-day';if(key<state.challengeStart||key>state.challengeEnd)b.classList.add('out');if(dd.read){b.classList.add('read');count++}if(dd.journal?.thought||dd.journal?.quote)b.classList.add('note');if(key===todayKey)b.classList.add('today');b.title=fmtDate(key);b.onclick=()=>openJournal(key);grid.append(b)}el.append(grid);wrap.append(el);cur=new Date(y,m+1,1)}$('challengeRead').textContent=count}
-function statusOf(b){if(b.status)return b.status;if(+b.progress>=100)return'done';if(+b.progress>0)return'reading';return'unread'}
-$('bookSearch').oninput=renderLibrary;$('librarySeg').onclick=e=>{const b=e.target.closest('[data-filter]');if(!b)return;libraryFilter=b.dataset.filter;document.querySelectorAll('#librarySeg button').forEach(x=>x.classList.toggle('active',x===b));renderLibrary()};
-function renderBookOptions(){const visible=state.books.filter(b=>!b.hidden),opts='<option value="">不指定</option>'+visible.map(b=>`<option value="${esc(b.key)}">${esc(b.title)}</option>`).join('');$('journalBook').innerHTML=opts;$('noteBookFilter').innerHTML='<option value="">全部书籍</option>'+visible.map(b=>`<option value="${esc(b.key)}">${esc(b.title)}</option>`).join('')}
-function renderAnalytics(){let total=0,words=0;const days=new Set(),monthSums=Array(12).fill(0),year=String(today.getFullYear());effectiveSessions().forEach(s=>{const mins=+s.minutes||0;total+=mins;words+=+s.words||0;if(s.date)days.add(s.date);if(String(s.date||'').startsWith(year+'-')){const month=+String(s.date).slice(5,7);if(month>=1&&month<=12)monthSums[month-1]+=mins}});$('kpiGrid').innerHTML=[['累计阅读',total.toLocaleString(),'分钟'],['阅读天数',days.size,'天'],['书架',state.books.filter(b=>!b.hidden).length,'本'],['阅读字数',words.toLocaleString(),'字']].map(x=>`<div class="kpi"><b>${x[1]}</b><span>${x[0]} · ${x[2]}</span></div>`).join('');const cats={};state.books.filter(b=>!b.hidden).forEach(b=>cats[b.category||'未分类']=(cats[b.category||'未分类']||0)+1);const entries=Object.entries(cats).sort((a,b)=>b[1]-a[1]);$('categoryTreemap').innerHTML=entries.map((x,i)=>`<div class="tree-cell" style="background:${palette[i%palette.length]}"><b>${esc(x[0])}</b><span>${x[1]}</span></div>`).join('');$('categoryLegend').innerHTML=entries.map(x=>`<span>● ${esc(x[0])} ${x[1]}</span>`).join('');const visibleBooks=state.books.filter(b=>!b.hidden),groups=[['未开始',b=>+b.progress===0],['1—25%',b=>+b.progress>0&&+b.progress<=25],['26—50%',b=>+b.progress>25&&+b.progress<=50],['51—99%',b=>+b.progress>50&&+b.progress<100],['已读完',b=>+b.progress>=100]];$('progressBars').innerHTML=groups.map(([n,f])=>{const c=visibleBooks.filter(f).length,p=visibleBooks.length?c/visibleBooks.length*100:0;return `<div class="bar-row"><span>${n}</span><div class="bar"><i style="width:${p}%"></i></div><b>${c}</b></div>`}).join('');const months=monthSums.map((mins,i)=>({i,mins})),max=Math.max(1,...monthSums);$('timelineHeat').innerHTML=months.map(x=>`<div class="heat-month" style="--a:${.08+.65*x.mins/max}" title="${x.mins} 分钟">${x.i+1}月</div>`).join('')}
-function monthWeReadActivity(val){const start=`${val}-01`,end=`${val}-31`,candidates=[];for(const b of state.books){if(b.hidden||!b.sources?.includes('weread'))continue;const verified=new Set(verifiedBookDates(b).filter(date=>date>=start&&date<=end));if(!verified.size)continue;const rows=(b.weReadSnapshots||[]).filter(x=>x?.date).sort((a,c)=>String(a.date).localeCompare(String(c.date))),lastDate=[...verified].sort().at(-1),lastIndex=rows.map(x=>x.date).lastIndexOf(lastDate),last=rows[lastIndex],before=rows.slice(0,lastIndex).at(-1),seconds=before?Math.max(0,(+last?.seconds||0)-(+before?.seconds||0)):0,progress=before?Math.max(0,(+last?.progress||0)-(+before?.progress||0)):0,score=seconds||progress*60||1,label=seconds?`累计阅读时间增加约 ${Math.round(seconds/60)} 分钟`:progress?`同步期间进度增加 ${Math.round(progress*10)/10}%`:'同步快照确认本月有阅读活动';candidates.push({book:b,score,label,latest:lastDate})}return candidates.sort((a,b)=>b.score-a.score||String(b.latest).localeCompare(String(a.latest)))[0]||null}
-function monthWeReadBooks(val){const start=`${val}-01`,end=`${val}-31`;return state.books.filter(b=>!b.hidden&&b.sources?.includes('weread')&&verifiedBookDates(b).some(date=>date>=start&&date<=end))}
-function monthBookCard(b,evidence){return `<div class="month-book" data-book-key="${esc(b.key)}"><span class="month-book-cover cover-art" style="--cover:${b.visualColor||b.color||state.accent}"><img data-cover-key="${esc(b.key)}" alt="" loading="lazy"><i>${esc(b.title)}</i></span><span class="month-book-copy"><b>${esc(b.title)}</b><small>${esc(b.author||'作者待补充')}</small><small class="month-book-evidence">${esc(evidence)}</small></span></div>`}
-function renderMonthly(){const val=$('monthPicker').value||todayKey.slice(0,7),[y,m]=val.split('-').map(Number),all=state.sessions.filter(s=>s.date.startsWith(val)),ss=effectiveSessions(all),mins=ss.reduce((a,s)=>a+(+s.minutes||0),0),words=ss.reduce((a,s)=>a+(+s.words||0),0),exactKeys=[...new Set([...all.map(s=>s.bookKey).filter(Boolean),...manualBooksInPeriod(val)])],exactBooks=exactKeys.map(book).filter(b=>b&&!b.hidden),exactSet=new Set(exactBooks.map(b=>String(b.key))),tracedBooks=monthWeReadBooks(val).filter(b=>!exactSet.has(String(b.key))),seen=[...exactBooks,...tracedBooks],hasWeReadTotal=all.some(s=>s.source==='weread'&&s.aggregate===true&&!s.bookKey),readDays=effectiveReadDates(all).size;$('monthlyTitle').textContent=`${y}年${m}月 · 阅读月报`;$('monthlyKpis').innerHTML=[['阅读时长',mins,'分钟'],['阅读天数',readDays,'天'],['看过',seen.length,'本'],['阅读字数',words.toLocaleString(),'字']].map(x=>`<div class="monthly-kpi"><b>${x[1]}</b><span>${x[0]} · ${x[2]}</span></div>`).join('');$('monthSeenTitle').textContent=`本月看过 · ${seen.length} 本`;$('monthSeenBooks').innerHTML=seen.length?[...exactBooks.map(b=>monthBookCard(b,'有逐书日期记录')),...tracedBooks.map(b=>monthBookCard(b,'微信进度变化证据'))].join(''):hasWeReadTotal?'<div class="empty-text">微信读书记录了本月阅读总量，但没有提供能定位到具体书籍的进度变化证据。</div>':'<div class="empty-text">这个月还没有阅读记录。</div>';hydrateCovers($('monthSeenBooks'));const count={};all.filter(s=>s.bookKey&&!(s.source==='weread'&&s.aggregate)).forEach(s=>count[s.bookKey]=(count[s.bookKey]||0)+(+s.minutes||0));const top=Object.entries(count).filter(([key])=>book(key)&&!book(key).hidden).sort((a,b)=>b[1]-a[1])[0],activity=top?null:monthWeReadActivity(val);$('monthTopTitle').textContent=top?'读得最多':activity?'微信进度增长':'本月高频';$('monthTopBook').innerHTML=top?`<b>${esc(book(top[0]).title)}</b><div class="section-sub">${top[1]} 分钟 · 有逐书记录</div>`:activity?`<b>${esc(activity.book.title)}</b><div class="section-sub">${esc(activity.label)}；这不是逐书分钟排行。</div>`:hasWeReadTotal?'<div class="empty-text">微信读书只提供本月总时长，无法判断哪本读得最多。</div>':'<div class="empty-text">暂无逐书阅读记录。</div>';const done=seen.filter(b=>statusOf(b)==='done');$('monthFinished').innerHTML=done.length?done.map(b=>`<div>${esc(b.title)}</div>`).join(''):'<div class="empty-text">暂无</div>';$('monthSummary').textContent=readDays?`这个月一共记录了 ${mins} 分钟，留下了 ${Object.values(state.journals).filter(j=>j.date.startsWith(val)).length} 篇手记。${top?`有逐书记录的数据中，读得最多的是《${book(top[0]).title}》。`:activity?`微信进度记录显示《${activity.book.title}》较活跃，但微信总时长无法按书拆分。`:hasWeReadTotal?'微信读书没有提供逐书分钟，因此不生成虚假的图书排行。':''}`:'这个月还没有可供总结的记录。'}
-$('monthPicker').value=todayKey.slice(0,7);$('monthPicker').onchange=renderMonthly;
-const overlay=$('overlay'),sheets=[...document.querySelectorAll('.sheet')];function showSheet(id){overlay.classList.add('show');$(id).classList.add('show')}function closeSheets(){overlay.classList.remove('show');sheets.forEach(s=>s.classList.remove('show'))}overlay.onclick=closeSheets;document.querySelectorAll('[data-close]').forEach(b=>b.onclick=closeSheets);
-$('settingsBtn').onclick=()=>{$('challengeStart').value=state.challengeStart;$('challengeEnd').value=state.challengeEnd;showSheet('settingsSheet')};
-function openJournal(key){const j=state.journals[key]||{date:key};$('journalOriginalDate').value=key;$('journalDate').value=key;$('journalBook').value=j.bookKey||'';$('journalRead').checked=!!j.read;$('journalWhat').value=j.what||'';$('journalQuote').value=j.quote||'';$('journalThought').value=j.thought||'';$('journalSheetTitle').textContent=fmtDate(key);showSheet('journalSheet')}
-$('editTodayBtn').onclick=()=>openJournal(todayKey);$('saveJournal').onclick=()=>{const old=$('journalOriginalDate').value,key=$('journalDate').value;if(!key){toast('请选择日期');return}if(old!==key)delete state.journals[old];state.journals[key]={date:key,bookKey:$('journalBook').value,read:$('journalRead').checked,what:$('journalWhat').value.trim(),quote:$('journalQuote').value.trim(),thought:$('journalThought').value.trim()};save();renderAll();closeSheets();toast('这一天已保存')};
-function openBook(key){const b=book(key);if(!b)return;$('bookKey').value=b.key;$('bookTitle').value=b.title||'';$('bookAuthor').value=b.author||'';$('bookCategory').value=b.category||'';$('bookProgress').value=b.progress??'';$('bookFinishedDate').value=b.finishedDate||'';$('bookDataNote').textContent=`来源：${sourceLabel(b)} · 静读天下文件：${b.file||'—'} · 累计 ${b.minutes||0} 分钟 · ${b.days||0} 个阅读日`;$('bookSheetTitle').textContent=b.title;showSheet('bookSheet')}
-$('saveBook').onclick=()=>{const b=book($('bookKey').value);if(!b)return;b.title=$('bookTitle').value.trim()||b.file||'未命名';b.author=$('bookAuthor').value.trim();b.category=$('bookCategory').value.trim();b.progress=Math.max(0,Math.min(100,+$('bookProgress').value||0));b.progressSource='manual';b.finishedDate=$('bookFinishedDate').value;b.status=b.progress>=100?'done':b.progress>0?'reading':'unread';save();renderAll();closeSheets();toast('书籍资料已保存')};
-$('challengeStart').onchange=e=>{if(e.target.value)state.challengeStart=e.target.value;save();renderCalendarPage()};$('challengeEnd').onchange=e=>{if(e.target.value&&e.target.value>=state.challengeStart)state.challengeEnd=e.target.value;else{toast('结束日期不能早于开始日期');e.target.value=state.challengeEnd}save();renderCalendarPage()};$('colorRow').onclick=e=>{const b=e.target.closest('[data-color]');if(!b)return;state.accent=b.dataset.color;save();applyAccent()};$('customColor').oninput=e=>{state.accent=e.target.value;save();applyAccent()};
-$('exportBackup').onclick=async()=>{const btn=$('exportBackup'),operation='export';if(btn.disabled||!beginArchiveOperation(operation))return;btn.disabled=true;const old=btn.textContent;btn.textContent='正在生成…';try{toast('正在生成完整备份……');if(window.yuejiHighlightsReady)await window.yuejiHighlightsReady;await highlightsWriteQueue;await new Promise(requestAnimationFrame);const payload=await buildPortableBackup(),stringify=window.yuejiStringifyJson||((value)=>JSON.stringify(value,null,2)),text=await stringify(payload),blob=new Blob([text],{type:'application/json'}),a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=`阅迹备份-${todayKey}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);toast('完整备份已导出（包含本地封面）')}catch(e){toast('备份导出失败，请稍后重试')}finally{btn.disabled=false;btn.textContent=old;endArchiveOperation(operation)}};
-async function replaceArchiveData(value,demoMode=false){const before=state,portable={...(value||{})},coverArchive=Array.isArray(portable.localCovers)?portable.localCovers:[];delete portable.localCovers;const incoming=normalize(portable),rows=incoming.highlights||[],trashRecords=incoming.bookTrash||[];try{if(coverArchive.length)await restoreCoverArchive(coverArchive);if(highlightsDbReady){const ids=new Set();rows.forEach((h,i)=>ids.add(h?.id||stableHighlight(h,i).id));const trashIds=new Set();trashRecords.forEach(item=>{const bookKey=String(item?.book?.key||item?.bookKey||'');(item.highlights||item.items||[]).forEach((h,i)=>{if(bookKey)trashIds.add(trashHighlight(h,bookKey,i).trashId)})});const count=ids.size,trashCount=trashIds.size,compactTrash=trashRecords.map(item=>({...item,highlights:[],highlightsInDb:true})),next=normalize({...incoming,bookTrash:compactTrash,highlights:[],highlightsCount:count,highlightsStorage:'indexeddb-v6'});state=next;if(window.yuejiPersistExternalState)await window.yuejiPersistExternalState(state);const nextRaw=JSON.stringify(compactStateFor(next,count));localStorage.setItem(HIGHLIGHTS_PENDING,JSON.stringify({phase:'preparing',count,trashCount,nextRaw,createdAt:Date.now()}));await replaceHighlightsDb(rows,trashRecords);sessionDateIndex=null;localStorage.setItem(STORAGE,nextRaw);localStorage.removeItem(HIGHLIGHTS_PENDING)}else{state=incoming;if(window.yuejiPersistExternalState)await window.yuejiPersistExternalState(state);save()}if(demoMode)localStorage.setItem(DEMO_OPTIN,'1');else localStorage.removeItem(DEMO_OPTIN);return true}catch(error){state=before;sessionDateIndex=null;try{const pending=JSON.parse(localStorage.getItem(HIGHLIGHTS_PENDING));if(pending?.phase!=='staged')localStorage.removeItem(HIGHLIGHTS_PENDING)}catch{localStorage.removeItem(HIGHLIGHTS_PENDING)}throw error}}
-$('importBackup').onchange=async e=>{const f=e.target.files[0],operation='import-backup';if(!f)return;if(!beginArchiveOperation(operation)){e.target.value='';return}try{if(window.yuejiHighlightsReady)await window.yuejiHighlightsReady;const text=await f.text(),parse=window.yuejiParseJsonText||JSON.parse;await replaceArchiveData(await parse(text),false);await requestPersistentStorage();renderAll();toast('网页备份已导入')}catch(err){renderAll();toast('这个 JSON 无法读取或保存')}finally{e.target.value='';endArchiveOperation(operation)}};
-$('loadDemo').onclick=async()=>{if(!confirm('恢复演示数据会覆盖当前网页记录，继续吗？'))return;try{if(window.yuejiHighlightsReady)await window.yuejiHighlightsReady;await replaceArchiveData(clone(demo),true);renderAll();toast('已恢复演示数据')}catch(error){renderAll();toast('恢复演示数据失败，原有数据没有变化')}};
-function cleanTitle(v){return String(v||'').replace(/\\/g,'/').split('/').pop().replace(/\.(epub|mobi|azw3?|pdf|txt|cbz|cbr)$/i,'').trim()||'未命名书籍'}
-function pickCol(cols,tests){return cols.find(c=>tests.some(t=>t.test(c.toLowerCase())))}
-async function parseSqlite(bytes){const SQL=await initSqlJs();const db=new SQL.Database(new Uint8Array(bytes));const tables=db.exec("SELECT name FROM sqlite_master WHERE type='table'")[0]?.values.flat()||[];let books=[],sessions=[];for(const tn of tables){let info;try{info=db.exec(`PRAGMA table_info(\"${String(tn).replace(/"/g,'""')}\")`)[0]}catch(e){continue}if(!info)continue;const cols=info.values.map(r=>String(r[1])),title=pickCol(cols,[/book.*name/,/^name$/,/^title$/, /filename/]),date=pickCol(cols,[/^date$/, /read.*date/,/time/,/day/]),mins=pickCol(cols,[/minute/,/duration/,/read.*time/]),words=pickCol(cols,[/word/,/char/]),progress=pickCol(cols,[/progress/,/percent/]),author=pickCol(cols,[/author/]);if(title){let rows;try{rows=db.exec(`SELECT * FROM \"${String(tn).replace(/"/g,'""')}\" LIMIT 5000`)[0]}catch(e){continue}if(!rows)continue;const idx=Object.fromEntries(rows.columns.map((c,i)=>[c,i]));for(const r of rows.values){const raw=r[idx[title]];if(raw==null)continue;let dval=date?r[idx[date]]:null,dk='';if(dval){if(typeof dval==='number'){const ms=dval>1e12?dval:dval>1e9?dval*1000:null;if(ms)dk=dateKey(new Date(ms))}else{const m=String(dval).match(/(20\d{2})[-\/]?(\d{1,2})[-\/]?(\d{1,2})/);if(m)dk=`${m[1]}-${pad(m[2])}-${pad(m[3])}`}}const key='moon-'+btoa(unescape(encodeURIComponent(String(raw)))).replace(/[^a-z0-9]/gi,'').slice(0,24);if(!books.some(b=>b.key===key))books.push({key,title:cleanTitle(raw),file:String(raw),author:author?String(r[idx[author]]||''):'',category:'',country:'',birth:'',progress:progress?Math.min(100,+r[idx[progress]]||0):0,status:'reading',minutes:0,words:0,days:0,color:palette[books.length%palette.length]});if(dk)sessions.push({date:dk,bookKey:key,minutes:mins?Math.max(0,+r[idx[mins]]||0):0,words:words?Math.max(0,+r[idx[words]]||0):0})}}}
- db.close();if(!books.length)throw new Error('未找到可识别的书籍表');return{books,sessions}}
-async function importMoon(file){$('importStatus').textContent='正在本地读取备份……';try{const zip=await JSZip.loadAsync(file),names=Object.keys(zip.files).filter(n=>!zip.files[n].dir),dbName=names.find(n=>/\.(db|sqlite|sqlite3)$/i.test(n))||names.find(n=>/database|book|stat/i.test(n)),jsonName=names.find(n=>/\.json$/i.test(n));let data;if(dbName)data=await parseSqlite(await zip.file(dbName).async('arraybuffer'));else if(jsonName){const obj=JSON.parse(await zip.file(jsonName).async('text'));data={books:obj.books||[],sessions:obj.sessions||[]}}else throw new Error('备份中没有找到可读取的数据库');if(!data.books.length)throw new Error('没有识别到书籍');const byKey={};data.sessions.forEach(s=>{if(!byKey[s.bookKey])byKey[s.bookKey]=[];byKey[s.bookKey].push(s)});data.books.forEach(b=>{const ss=byKey[b.key]||[];b.minutes=ss.reduce((a,s)=>a+(+s.minutes||0),0);b.words=ss.reduce((a,s)=>a+(+s.words||0),0);b.days=new Set(ss.map(s=>s.date)).size});state.books=data.books;state.sessions=data.sessions;state.source='静读天下';state.importedAt=new Date().toISOString();save();renderAll();$('importStatus').textContent=`已识别 ${data.books.length} 本书、${new Set(data.sessions.map(s=>s.date)).size} 个阅读日。` ;toast('静读天下备份已导入')}catch(err){$('importStatus').textContent=`没有成功解析：${err.message}。你的备份不会被上传或改动。`;toast('导入失败')}}
-function moonKey(v){let h=2166136261;for(const c of String(v||'').toLowerCase()){h^=c.codePointAt(0);h=Math.imul(h,16777619)}return'moon-'+(h>>>0).toString(36)}
-function sqlRows(db,sql){const out=db.exec(sql)[0];if(!out)return[];return out.values.map(r=>Object.fromEntries(out.columns.map((c,i)=>[c,r[i]])))}
-const yieldToBrowser=()=>new Promise(resolve=>setTimeout(resolve,0));
-async function eachSqlRow(db,sql,visit,batchSize=300){const stmt=db.prepare(sql);let count=0;try{while(stmt.step()){visit(stmt.getAsObject());count++;if(count%batchSize===0)await yieldToBrowser()}}finally{stmt.free()}return count}
-function moonDate(ms){const d=new Date(+ms||0);return Number.isNaN(d.getTime())||d.getFullYear()<2000?todayKey:dateKey(d)}
-function dayNumberDate(n){const d=new Date(+n*86400000);return Number.isNaN(d.getTime())?'':d.toISOString().slice(0,10)}
-async function parseMoonDatabase(bytes,onProgress=()=>{}){const SQL=await initSqlJs(),db=new SQL.Database(new Uint8Array(bytes));try{const tables=new Set(sqlRows(db,"SELECT name FROM sqlite_master WHERE type='table'").map(x=>x.name));if(!tables.has('books')||!tables.has('notes'))throw new Error('没有找到静读天下书目和书摘表');const books=[],bookByKey=new Map(),aliases=new Map(),highlights=[],combined=new Map(),bookStats=new Map();function addBook(title,filename,author='',category=''){const identity=String(filename||title||'').toLowerCase(),key=moonKey(identity),found=bookByKey.get(key);if(found)return found;const b={key,title:String(title||cleanTitle(filename)),file:String(filename||''),author:String(author||''),category:String(category||''),progress:0,status:'unread',minutes:0,words:0,days:0,color:palette[books.length%palette.length]};books.push(b);bookByKey.set(key,b);[filename,title].filter(Boolean).forEach(x=>aliases.set(String(x).toLowerCase(),b));return b}function resolve(title,filename){return aliases.get(String(filename||'').toLowerCase())||aliases.get(String(title||'').toLowerCase())||addBook(title,filename)}onProgress('正在读取书目……');await eachSqlRow(db,'SELECT * FROM books',r=>addBook(r.book,r.filename,r.author,r.category));onProgress('正在分批读取书摘……');await eachSqlRow(db,'SELECT * FROM notes',r=>{const quote=String(r.original||''),note=String(r.note||'');if(!quote.trim()&&!note.trim())return;const b=resolve(r.book,r.filename),time=+r.time||0;highlights.push({id:`moon-note-${r._id}-${moonKey(r.filename)}`,bookKey:b.key,date:moonDate(time),time,quote,note,bookmark:String(r.bookmark||''),color:r.highlightColor,underline:!!r.underline,strikethrough:!!r.strikethrough})});if(tables.has('statistics')){onProgress('正在分批整理阅读记录……');await eachSqlRow(db,'SELECT * FROM statistics',r=>{const b=resolve('',r.filename);for(const line of String(r.dates||'').split(/\r?\n/)){const m=line.match(/^(\d+)\|(\d+)@(\d+)/);if(!m)continue;const date=dayNumberDate(m[1]);if(!date)continue;const k=`${date}|${b.key}`,old=combined.get(k)||{date,bookKey:b.key,minutes:0,words:0,source:'moon'};old.minutes+=Math.round(+m[2]/60000);old.words+=+m[3]||0;combined.set(k,old)}})}const sessions=[...combined.values()];sessions.forEach(s=>{let x=bookStats.get(s.bookKey);if(!x){x={minutes:0,words:0,dates:new Set()};bookStats.set(s.bookKey,x)}x.minutes+=s.minutes;x.words+=s.words;x.dates.add(s.date)});books.forEach(b=>{const x=bookStats.get(b.key);if(!x)return;b.minutes=x.minutes;b.words=x.words;b.days=x.dates.size;b.status='reading'});return{books,sessions,highlights}}finally{db.close()}}
-async function databaseFromBackup(file){const zip=await JSZip.loadAsync(file),names=Object.keys(zip.files).filter(n=>!zip.files[n].dir);let dbName=names.find(n=>/(^|\/)mrbooks\.db$/i.test(n))||names.find(n=>/\.(db|sqlite|sqlite3)$/i.test(n));if(!dbName){const manifest=names.find(n=>/(^|\/)_names\.list$/i.test(n));if(manifest){const lines=(await zip.file(manifest).async('text')).replace(/^\uFEFF/,'').split(/\r?\n/),index=lines.findIndex(n=>/(^|\/)mrbooks\.db(?:$|\?)/i.test(n));if(index>=0){const dir=manifest.slice(0,manifest.lastIndexOf('/')+1),tag=`${dir}${index+1}.tag`;if(zip.file(tag))dbName=tag}}}if(!dbName)throw new Error('备份中没有找到 mrbooks.db');return zip.file(dbName).async('arraybuffer')}
-let pendingMoonImport=null;
-async function importMoonV2(file){$('importStatus').textContent='正在本地读取备份……';$('importPreview').hidden=true;pendingMoonImport=null;try{const data=await parseMoonDatabase(await databaseFromBackup(file));pendingMoonImport=data;const days=new Set(data.sessions.map(s=>s.date)).size,comments=data.highlights.filter(h=>h.note.trim()).length;$('importPreviewText').innerHTML=`<b>已经读取完成，尚未写入网页</b><div class="preview-grid"><span><strong>${data.books.length}</strong> 本书</span><span><strong>${data.highlights.length}</strong> 条书摘</span><span><strong>${comments}</strong> 条批注</span><span><strong>${days}</strong> 个阅读日</span></div><p>确认后会与现有记录合并；重复导入不会重复添加同一条书摘。</p>`;$('importStatus').textContent=`文件：${file.name} · 全程在当前浏览器内解析。`;$('importPreview').hidden=false}catch(err){$('importStatus').textContent=`没有成功解析：${err.message}。现有数据没有变化。`;toast('导入失败')}}
-function mergeMoon(data){const base=state.source==='演示数据'?{...state,books:[],sessions:[],journals:{},highlights:[]}:state,bookMap=new Map(base.books.map(b=>[b.key,b]));data.books.forEach(b=>{const old=bookMap.get(b.key);bookMap.set(b.key,old?{...b,...old,file:old.file||b.file,author:old.author||b.author,category:old.category||b.category,minutes:b.minutes,words:b.words,days:b.days,status:+old.progress>0?old.status:b.status}:b)});const sessions=new Map(base.sessions.map(s=>[`${s.date}|${s.bookKey}`,s]));data.sessions.forEach(s=>sessions.set(`${s.date}|${s.bookKey}`,s));const highlights=new Map((base.highlights||[]).map(h=>[h.id,h]));data.highlights.forEach(h=>highlights.set(h.id,h));state=normalize({...base,books:[...bookMap.values()],sessions:[...sessions.values()],highlights:[...highlights.values()],source:'静读天下',importedAt:new Date().toISOString()});save();renderAll()}
-$('cancelMoonImport').onclick=()=>{if(pendingMoonImport)pendingMoonImport.zip=null;pendingMoonImport=null;$('importPreview').hidden=true;$('mrproFile').value='';$('importStatus').textContent='已取消，网页数据没有变化。'};
-const COVER_DB='yueji-covers-v1';
-function canonicalFile(v){return String(v||'').replace(/\\/g,'/').split('/').pop().toLowerCase()}
-function coverDb(){return new Promise((resolve,reject)=>{const req=indexedDB.open(COVER_DB,1);req.onupgradeneeded=()=>req.result.createObjectStore('covers');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}
-function countDbStore(openDb,storeName){return openDb().then(async db=>{try{return await new Promise((resolve,reject)=>{const req=db.transaction(storeName).objectStore(storeName).count();req.onsuccess=()=>resolve(req.result||0);req.onerror=()=>reject(req.error)})}finally{db.close()}})}
-async function highlightTrashStats(){const db=await highlightDb();try{return await new Promise((resolve,reject)=>{const req=db.transaction(HIGHLIGHTS_TRASH_ROW_STORE).objectStore(HIGHLIGHTS_TRASH_ROW_STORE).openCursor(),books=new Set();let highlights=0;req.onsuccess=()=>{const c=req.result;if(!c)return resolve({books:books.size,highlights});books.add(String(c.value?.bookKey||''));highlights++;c.continue()};req.onerror=()=>reject(req.error)})}finally{db.close()}}
-function formatBytes(bytes){const n=Number(bytes)||0;if(n<1024)return`${n} B`;if(n<1048576)return`${(n/1024).toFixed(1)} KB`;if(n<1073741824)return`${(n/1048576).toFixed(1)} MB`;return`${(n/1073741824).toFixed(2)} GB`}
-function localStorageBytes(){let n=0;for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i)||'',v=localStorage.getItem(k)||'';n+=(k.length+v.length)*2}return n}
-async function persistentStorageStatus(){if(!navigator.storage?.persisted)return{supported:false,persisted:false};try{return{supported:true,persisted:Boolean(await navigator.storage.persisted())}}catch{return{supported:true,persisted:false}}}
-async function requestPersistentStorage(){const current=await persistentStorageStatus();if(!current.supported||current.persisted||!navigator.storage?.persist)return current;try{return{supported:true,persisted:Boolean(await navigator.storage.persist())}}catch{return current}}
-window.yuejiRequestPersistentStorage=requestPersistentStorage;window.yuejiPersistentStorageStatus=persistentStorageStatus;
-let diagnosticText='';
-async function buildDiagnostics(){if(window.yuejiHighlightsReady)await window.yuejiHighlightsReady;const memory=highlightCount(state.highlights),expected=highlightsDbReady?highlightsCountCache:Number(state.highlightsCount)||memory,pending=Boolean(localStorage.getItem(HIGHLIGHTS_PENDING)),lines=[`检查时间：${new Date().toLocaleString('zh-CN')}`,`书籍：${state.books.length} 本`,`阅读记录：${state.sessions.length} 条`,`阅读手记：${Object.keys(state.journals||{}).length} 条`,`内存常驻书摘：${memory} 条`];let level='ok';try{const stored=await countDbStore(highlightDb,HIGHLIGHTS_STORE),staged=await countDbStore(highlightDb,HIGHLIGHTS_STAGE_STORE),trashStaged=await countDbStore(highlightDb,HIGHLIGHTS_TRASH_STAGE_STORE),trash=await highlightTrashStats();lines.push(`IndexedDB 书摘：${stored} 条`,`书摘暂存区：${staged} 条`,`回收区暂存：${trashStaged} 条`,`未完成替换标记：${pending?'有':'无'}`,`回收区：${trash.books} 本书 / ${trash.highlights} 条书摘`);if(!highlightsDbReady){level='error';lines.push('书摘数据库状态：不可用，当前保留旧储存')}else if(stored!==expected){level='warn';lines.push(`书摘数据库状态：数量不一致（相差 ${Math.abs(stored-expected)} 条）`)}else if(pending){level='warn';lines.push('书摘数据库状态：存在尚未完成的数据替换')}else if(staged>0||trashStaged>0){level='warn';lines.push('书摘数据库状态：暂存区存在中断后残留，重新打开网页时会安全回退')}else if(memory>0){level='warn';lines.push('书摘内存状态：仍有待迁移记录')}else lines.push('书摘数据库状态：正常，按需读取')}catch(error){level='error';lines.push(`书摘数据库状态：读取失败（${error?.message||'未知错误'}）`)}try{lines.push(`封面数据库：${await countDbStore(coverDb,'covers')} 张`)}catch(error){level=level==='ok'?'warn':level;lines.push('封面数据库：暂时无法读取')}lines.push(`localStorage 占用：约 ${formatBytes(localStorageBytes())}`);const persistence=await persistentStorageStatus();lines.push(`持久存储：${!persistence.supported?'浏览器不支持':persistence.persisted?'已启用':'未启用（浏览器仍可能自动清理网站数据）'}`);try{const estimate=await navigator.storage?.estimate?.();if(estimate){lines.push(`当前网站总储存：约 ${formatBytes(estimate.usage)}`);if(estimate.quota)lines.push(`浏览器可用配额：约 ${formatBytes(estimate.quota)}`)}}catch{}lines.push(level==='ok'?'结论：本地数据正常，书摘不会全部常驻内存。':level==='warn'?'结论：发现需要注意的项目，请先导出备份。':'结论：数据库不可用或读取失败，请勿清理网站数据。');return{level,text:lines.join('\n')}}
-async function runDiagnostics(){const out=$('diagnosticResult'),btn=$('runDiagnostics');btn.disabled=true;out.className='diagnostic-result';out.textContent='正在检查本地数据……';try{const result=await buildDiagnostics();diagnosticText=result.text;out.className=`diagnostic-result ${result.level}`;out.textContent=result.text;$('copyDiagnostics').disabled=false}catch(error){diagnosticText='';out.className='diagnostic-result error';out.textContent=`检查没有完成：${error?.message||'未知错误'}\n现有数据没有被修改。`;$('copyDiagnostics').disabled=true}finally{btn.disabled=false}}
-async function copyDiagnostics(){if(!diagnosticText)return;try{await navigator.clipboard.writeText(diagnosticText);toast('诊断信息已复制')}catch{const t=document.createElement('textarea');t.value=diagnosticText;document.body.append(t);t.select();document.execCommand('copy');t.remove();toast('诊断信息已复制')}}
-async function protectLocalData(){const btn=$('requestPersistentStorage');btn.disabled=true;try{const result=await requestPersistentStorage();if(!result.supported)toast('当前浏览器不支持持久存储');else if(result.persisted)toast('本地数据保护已启用');else toast('浏览器暂未授予保护权限');await runDiagnostics()}finally{btn.disabled=false}}
-function openStressDb(){return new Promise((resolve,reject)=>{const req=indexedDB.open('yueji-diagnostic-stress-v1',2);req.onupgradeneeded=()=>{const db=req.result,store=db.objectStoreNames.contains('rows')?req.transaction.objectStore('rows'):db.createObjectStore('rows',{keyPath:'id'});if(!store.indexNames.contains('sortTime'))store.createIndex('sortTime','sortTime');if(!store.indexNames.contains('bookSort'))store.createIndex('bookSort',['bookKey','sortTime'])};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}
-function stressBatch(db,start,count){return new Promise((resolve,reject)=>{const tx=db.transaction('rows','readwrite'),store=tx.objectStore('rows');for(let i=start;i<start+count;i++)store.put({id:`test-${i}`,bookKey:`book-${i%57}`,date:`2026-${pad(i%12+1)}-${pad(i%28+1)}`,sortTime:i,quote:`本地压力测试书摘 ${i} `+'阅迹'.repeat(40),note:i%3?'':'模拟感想',searchText:`本地压力测试书摘 ${i} 阅迹`});tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('测试写入中止'))})}
-function stressReadBook(db,bookKey,limit=80){return new Promise((resolve,reject)=>{const rows=[],source=db.transaction('rows').objectStore('rows').index('bookSort'),range=IDBKeyRange.bound([bookKey,0],[bookKey,Number.MAX_SAFE_INTEGER]),req=source.openCursor(range,'prev');req.onsuccess=()=>{const c=req.result;if(!c||rows.length>=limit)return resolve(rows);rows.push(c.value);c.continue()};req.onerror=()=>reject(req.error)})}
-async function runStorageStress(){const btn=$('runStorageStress'),out=$('diagnosticResult'),sizes=[100,1000,5000,10000];btn.disabled=true;out.className='diagnostic-result';out.textContent='正在运行独立数据库压力测试……';let db=null;const lines=['压力测试不会读取或修改真实数据。'];try{db=await openStressDb();for(const size of sizes){const start=performance.now();for(let i=0;i<size;i+=250){await stressBatch(db,i,Math.min(250,size-i));await new Promise(requestAnimationFrame)}const count=await new Promise((resolve,reject)=>{const req=db.transaction('rows').objectStore('rows').count();req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)}),readStart=performance.now(),sample=await stressReadBook(db,'book-7',80);if(size>=1000&&!sample.length)throw new Error('按书索引没有返回测试数据');lines.push(`${size.toLocaleString()} 条：写入并校验 ${count.toLocaleString()} 条，用时 ${Math.round(performance.now()-start)} ms；单书分页读取 ${sample.length} 条，用时 ${Math.round(performance.now()-readStart)} ms`);await new Promise((resolve,reject)=>{const tx=db.transaction('rows','readwrite');tx.objectStore('rows').clear();tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}lines.push('结论：分批写入与按书分页读取测试完成，临时数据已删除。');out.className='diagnostic-result ok'}catch(error){lines.push(`测试中止：${error?.message||'未知错误'}`,'真实阅读数据没有受到影响。');out.className='diagnostic-result error'}finally{if(db)db.close();indexedDB.deleteDatabase('yueji-diagnostic-stress-v1');out.textContent=lines.join('\n');btn.disabled=false}}
-$('runDiagnostics').onclick=runDiagnostics;$('requestPersistentStorage').onclick=protectLocalData;$('copyDiagnostics').onclick=copyDiagnostics;$('runStorageStress').onclick=runStorageStress;
-async function putCovers(items){if(!items?.length)return;const db=await coverDb();await new Promise((resolve,reject)=>{const tx=db.transaction('covers','readwrite'),store=tx.objectStore('covers');items.forEach(x=>store.put(x.blob,x.bookKey));tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)});db.close()}
-async function getCover(key){const db=await coverDb(),blob=await new Promise((resolve,reject)=>{const req=db.transaction('covers').objectStore('covers').get(key);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)});db.close();return blob}
-async function getCovers(keys){const unique=[...new Set((keys||[]).filter(Boolean))];if(!unique.length)return new Map();const db=await coverDb();try{const store=db.transaction('covers').objectStore('covers'),rows=await Promise.all(unique.map(key=>new Promise((resolve,reject)=>{const req=store.get(key);req.onsuccess=()=>resolve([key,req.result]);req.onerror=()=>reject(req.error)})));return new Map(rows)}finally{db.close()}}
-async function deleteCover(key){const db=await coverDb();try{await new Promise((resolve,reject)=>{const tx=db.transaction('covers','readwrite');tx.objectStore('covers').delete(key);tx.objectStore('covers').delete(`__yueji_source_cover__:${key}`);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error)})}finally{db.close()}}
-window.yuejiDeleteCover=deleteCover;
-async function compactRemoteCover(blob){if(!(blob instanceof Blob)||!blob.type.startsWith('image/'))throw new Error('INVALID_COVER');const bmp=await createImageBitmap(blob),scale=Math.min(1,480/bmp.width,720/bmp.height),w=Math.max(1,Math.round(bmp.width*scale)),h=Math.max(1,Math.round(bmp.height*scale)),canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;canvas.getContext('2d').drawImage(bmp,0,0,w,h);bmp.close?.();const out=await new Promise(resolve=>canvas.toBlob(resolve,'image/webp',.82));canvas.width=1;canvas.height=1;return out||blob}
-const coverFetchQueue=[],coverFetchPending=new Set(),coverFetchFailures=new Map();let coverFetchRunning=false;
-async function runCoverFetchQueue(){if(coverFetchRunning)return;coverFetchRunning=true;while(coverFetchQueue.length){const item=coverFetchQueue.shift();try{const response=await fetch(item.url,{mode:'cors',referrerPolicy:'no-referrer',credentials:'omit'});if(!response.ok)throw new Error(`HTTP_${response.status}`);const raw=await response.blob();if(raw.size>8*1024*1024)throw new Error('COVER_TOO_LARGE');const blob=await compactRemoteCover(raw);await putCovers([{bookKey:item.key,blob}]);coverFetchFailures.delete(item.key);if(item.img?.isConnected){const local=URL.createObjectURL(blob),release=()=>URL.revokeObjectURL(local);item.img.addEventListener('load',release,{once:true});item.img.addEventListener('error',release,{once:true});item.img.src=local;item.img.closest('.cover-art,.layout-cover-art,.home-recent-cover,.month-book-cover')?.classList.add('has-image')}}catch(error){coverFetchFailures.set(item.key,{at:Date.now(),reason:String(error?.message||error)});console.warn('来源封面缓存失败',item.key,error?.message||error)}finally{coverFetchPending.delete(item.key)}await new Promise(resolve=>setTimeout(resolve,120))}coverFetchRunning=false}
-function queueRemoteCover(img){const key=img.dataset.coverKey,b=book(key),url=b?.weReadCover||b?.cover,failed=coverFetchFailures.get(key);if(!key||!url||b?.manualCover||coverFetchPending.has(key)||failed&&Date.now()-failed.at<6*60*60*1000)return;coverFetchPending.add(key);coverFetchQueue.push({key,url,img});runCoverFetchQueue()}
-window.yuejiCoverFetchStatus=()=>({queued:coverFetchQueue.length,pending:coverFetchPending.size,failed:[...coverFetchFailures.entries()].map(([key,value])=>({key,...value}))});
-function blobDataUrlForBackup(blob){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result||''));reader.onerror=()=>reject(reader.error);reader.readAsDataURL(blob)})}
-async function readCoverArchive(){const db=await coverDb();try{const rows=await new Promise((resolve,reject)=>{const out=[],req=db.transaction('covers').objectStore('covers').openCursor();req.onsuccess=()=>{const c=req.result;if(!c)return resolve(out);out.push([String(c.key),c.value]);c.continue()};req.onerror=()=>reject(req.error)}),out=[];for(let i=0;i<rows.length;i++){const [bookKey,blob]=rows[i];if(blob instanceof Blob)out.push({bookKey,data:await blobDataUrlForBackup(blob)});if(i&&i%10===0)await new Promise(resolve=>setTimeout(resolve,0))}return out}finally{db.close()}}
-async function restoreCoverArchive(rows){const covers=[];for(let i=0;i<rows.length;i++){const row=rows[i];if(!row?.bookKey||!/^data:image\//i.test(row.data||''))continue;const blob=await fetch(row.data).then(r=>r.blob());covers.push({bookKey:String(row.bookKey),blob});if(covers.length>=20){await putCovers(covers.splice(0));await new Promise(resolve=>setTimeout(resolve,0))}}if(covers.length)await putCovers(covers)}
-async function buildPortableBackup(){const highlights=highlightsDbReady?await readHighlightsDb():[...(state.highlights||[])],trashRows=highlightsDbReady?await readHighlightTrashDb():[],trashMap=new Map(trashRows.map(x=>[x.bookKey,x.items||[]])),bookTrash=(state.bookTrash||[]).map(item=>({...item,highlights:trashMap.get(item.book?.key)||item.highlights||[],highlightsInDb:false})),localCovers=await readCoverArchive();return{...state,bookTrash,highlights,highlightsStorage:'portable-json',backupVersion:2,localCovers}}
-async function hydrateCovers(root=document){const imgs=[...root.querySelectorAll('img[data-cover-key]')];if(!imgs.length)return;try{const covers=await getCovers(imgs.map(img=>img.dataset.coverKey));for(const img of imgs){const blob=covers.get(img.dataset.coverKey);if(blob){const url=URL.createObjectURL(blob),release=()=>URL.revokeObjectURL(url);img.addEventListener('load',release,{once:true});img.addEventListener('error',release,{once:true});img.src=url;img.closest('.cover-art,.layout-cover-art,.home-recent-cover,.month-book-cover')?.classList.add('has-image');continue}if('IntersectionObserver'in window){const observer=new IntersectionObserver(entries=>{if(entries.some(x=>x.isIntersecting)){observer.disconnect();queueRemoteCover(img)}},{rootMargin:'240px'});observer.observe(img)}else queueRemoteCover(img)}}catch(error){console.warn('封面批量读取失败',error)}}
-function sourceLabel(b){const sources=new Set(b.sources||[]),labels=[];if(sources.has('weread'))labels.push('微信读书');if(sources.has('moon'))labels.push('静读天下');if(sources.has('manual'))labels.push('手动');return labels.join(' + ')||'本地'}
-function renderLibrary(){const q=$('bookSearch').value.trim().toLowerCase();const visible=state.books.filter(b=>!b.hidden),arr=visible.filter(b=>(libraryFilter==='all'||statusOf(b)===libraryFilter)&&`${b.title} ${b.file||''} ${b.author||''}`.toLowerCase().includes(q));$('libraryCount').textContent=visible.length;$('bookshelf').innerHTML=arr.length?arr.map((b,i)=>`<button class="cover-card" data-book="${esc(b.key)}"><span class="cover-art" style="--cover:${b.visualColor||b.color||palette[i%palette.length]}"><img data-cover-key="${esc(b.key)}" alt="" loading="lazy"><i>${esc(b.title)}</i><em>${Math.round(+b.progress||0)}%</em></span><span class="cover-info"><b>${esc(b.title)}</b><small>${esc(b.author||'作者待补充')}</small><small class="book-source">${esc(sourceLabel(b))}</small><span class="book-progress"><i style="width:${Math.min(100,+b.progress||0)}%"></i></span></span></button>`).join(''):'<div class="empty-text">这里还没有书。导入静读天下备份后，书架会自动出现。</div>';$('bookTable').innerHTML='';document.querySelectorAll('.cover-card[data-book]').forEach(x=>x.onclick=()=>openBook(x.dataset.book));hydrateCovers($('bookshelf'))}
-let noteKind='all',noteRenderLimit=80,noteSearchTimer=0,noteSearchVersion=0,renderNotes;
-async function renderNotesPaged(){
-  const version=++noteSearchVersion,q=$('noteSearch').value.trim().toLowerCase(),selected=$('noteBookFilter').value,items=[];
-  Object.values(state.journals).forEach(j=>items.push({id:`journal-${j.date}`,bookKey:j.bookKey||'',date:j.date,time:parseDate(j.date).getTime(),quote:j.quote||'',thought:j.thought||'',label:j.what||'',type:'journal'}));
-  try{
-    if(window.yuejiHighlightsReady)await window.yuejiHighlightsReady;
-    const result=highlightsDbReady?await queryHighlightsDb({bookKey:selected,query:q,kind:noteKind,limit:noteRenderLimit+1}):{rows:[...(state.highlights||[])],hasMore:false};
-    if(version!==noteSearchVersion||page!=='notes')return;
-    result.rows.slice(0,noteRenderLimit).forEach(h=>items.push({id:h.id,bookKey:h.bookKey||'',date:h.date,time:+h.sortTime||+h.time||parseDate(h.date).getTime(),quote:h.quote||'',thought:h.note||'',label:h.bookmark||'',type:'highlight'}));
-    const filtered=items.filter(n=>(!selected||n.bookKey===selected)&&(noteKind==='all'||noteKind==='quotes'&&n.quote.trim()||noteKind==='thoughts'&&n.thought.trim())&&`${n.quote} ${n.thought} ${n.label}`.toLowerCase().includes(q)).sort((a,b)=>b.time-a.time),visible=filtered.slice(0,noteRenderLimit),groups=new Map();
-    visible.forEach(n=>{const k=n.bookKey||'_none';if(!groups.has(k))groups.set(k,[]);groups.get(k).push(n)});
-    const ordered=[...groups.entries()].sort((a,b)=>b[1][0].time-a[1][0].time),more=result.hasMore||filtered.length>visible.length;
-    $('notesList').innerHTML=ordered.length?ordered.map(([key,notes])=>{const b=book(key);return`<details class="note-book-group" ${q||selected?'open':''}><summary><span class="note-book-cover cover-art" style="--cover:${b?.color||'#666'}"><img ${b?`data-cover-key="${esc(b.key)}"`:''} alt=""><i>${esc(b?.title||'未关联书籍')}</i></span><span><b>${esc(b?.title||'未关联书籍')}</b><small>${notes.length} 条 · ${notes.filter(n=>n.quote.trim()).length} 条摘录 · ${notes.filter(n=>n.thought.trim()).length} 条感想</small></span><em>⌄</em></summary><div class="note-book-entries">${notes.map(n=>`<article class="reading-note ${n.quote&&n.thought?'mixed-note':n.quote?'quote-note':'thought-note'}">${n.label?`<div class="note-location">${esc(n.label)}</div>`:''}${n.quote?`<div class="quote-body"><span>“</span><p>${esc(n.quote)}</p></div>`:''}${n.thought?`<div class="thought-body"><span>▤</span><p>${esc(n.thought)}</p></div>`:''}<time>${fmtDate(n.date)}</time></article>`).join('')}</div></details>`}).join('')+(more?'<button class="soft-btn" id="loadMoreNotes" style="width:100%;margin-top:14px">继续加载更多</button>':''):'<div class="card empty-text">这里没有符合条件的内容。</div>';
+async function reconcileCrossSourceBooks() {
+  const before = clone(state);
+  try {
+    const result = reconcileCrossSourceBooksInMemory();
+    if (!result.changed) return result;
+    if (highlightsDbReady) await remapHighlightsBookKeys(result.keyMap);
+    window.yuejiRefreshWeReadBookIndexes?.();
+    save();
+    return result;
+  } catch (error) {
+    state = before;
+    window.yuejiRefreshWeReadBookIndexes?.();
+    throw error;
+  }
+}
+async function mergeConfirmedBookPair(firstKey, secondKey) {
+  const before = clone(state),
+    first = book(firstKey),
+    second = book(secondKey);
+  if (!first || !second || first.key === second.key) throw new Error('BOOK_PAIR_MISSING');
+  const keep = (first.sources || []).includes('moon')
+      ? first
+      : (second.sources || []).includes('moon')
+        ? second
+        : first,
+    drop = keep === first ? second : first,
+    keyMap = new Map([[String(drop.key), String(keep.key)]]),
+    removedWeReadIds = [first.weReadBookId, second.weReadBookId].filter(Boolean);
+  let combined;
+  try {
+    combined = mergedCrossSourceBook(keep, drop);
+    state.books = state.books
+      .filter((b) => b.key !== drop.key)
+      .map((b) => (b.key === keep.key ? combined : b));
+    state.sessions = state.sessions.map((s) =>
+      s.bookKey === drop.key ? { ...s, bookKey: keep.key } : s,
+    );
+    Object.values(state.journals || {}).forEach((j) => {
+      if (j?.bookKey === drop.key) j.bookKey = keep.key;
+    });
+    state.highlights = (state.highlights || []).map((h) =>
+      h.bookKey === drop.key ? { ...h, bookKey: keep.key } : h,
+    );
+    if (highlightsDbReady) await remapHighlightsBookKeys(keyMap);
+    window.yuejiRefreshWeReadBookIndexes?.();
+    save();
+  } catch (error) {
+    state = before;
+    window.yuejiRefreshWeReadBookIndexes?.();
+    throw error;
+  }
+  try {
+    await window.yuejiPersistMergedWeReadBook?.({
+      book: combined,
+      removedWeReadIds,
+      fromKey: String(drop.key),
+      toKey: String(keep.key),
+    });
+  } catch (error) {
+    console.warn('合并结果暂未写入微信缓存，将在下次同步时补写', error);
+  }
+  return combined;
+}
+window.yuejiBookIdentity = bookIdentityValue;
+window.yuejiCrossSourceMatch = crossSourceMatch;
+window.yuejiReconcileCrossSourceBooks = reconcileCrossSourceBooks;
+window.yuejiMergeConfirmedBookPair = mergeConfirmedBookPair;
+async function remapSourceHighlightsBookKey(fromKey, toKey, source) {
+  if (!highlightsDbReady) return;
+  return queueHighlightWrite(async () => {
+    const db = await highlightDb();
+    try {
+      const tx = db.transaction(HIGHLIGHTS_STORE, 'readwrite'),
+        done = idbTxDone(tx, '分离跨平台书摘失败'),
+        store = tx.objectStore(HIGHLIGHTS_STORE),
+        cursor = store.index('bookKey').openCursor(IDBKeyRange.only(String(fromKey)));
+      cursor.onsuccess = () => {
+        const row = cursor.result;
+        if (!row) return;
+        const value = row.value;
+        if (
+          value?.source === source ||
+          (source === 'weread' && value?.bookmark === '__YUEJI_WEREAD__')
+        )
+          row.update(stableHighlight({ ...value, bookKey: String(toKey) }));
+        row.continue();
+      };
+      cursor.onerror = () => tx.abort();
+      await done;
+      await rebuildHighlightBookCountsDb(db);
+      highlightsCountCache = await countHighlightsDb(db);
+      state.highlightsCount = highlightsCountCache;
+    } finally {
+      db.close();
+    }
+  });
+}
+function withoutKeys(value, keys) {
+  const copy = { ...value };
+  keys.forEach((key) => delete copy[key]);
+  return copy;
+}
+async function splitMergedBook(bookKey) {
+  const before = clone(state),
+    combined = book(bookKey),
+    sources = new Set(combined?.sources || []),
+    bookId = String(combined?.weReadBookId || '');
+  if (!combined || !sources.has('moon') || !sources.has('weread') || !bookId)
+    throw new Error('MERGED_BOOK_MISSING');
+  const shelf =
+      (state.weRead?.shelfBooks || []).find((row) => String(row?.bookId || '') === bookId) || {},
+    weReadKey = `wr:${bookId}`,
+    moon = withoutKeys({ ...combined, sources: ['moon'] }, [
+      'weReadBookId',
+      'weReadSeconds',
+      'weReadProgress',
+      'weReadLastRead',
+      'weReadShelfReadUpdate',
+      'weReadCover',
+      'weReadSnapshots',
+      'weReadProgressEvidence',
+      'readUpdateTime',
+      'finishReading',
+    ]),
+    weread = withoutKeys(
+      {
+        ...combined,
+        key: weReadKey,
+        title: shelf.title || shelf.name || combined.title,
+        author: shelf.author || shelf.authorName || combined.author,
+        category: shelf.category || combined.category || '未分类',
+        cover: shelf.cover || combined.weReadCover || '',
+        sources: ['weread'],
+        file: '',
+        minutes: 0,
+        words: 0,
+        days: 0,
+        progress: +combined.weReadProgress || 0,
+        status:
+          (+combined.weReadProgress || 0) >= 99.95
+            ? 'done'
+            : (+combined.weReadProgress || 0) > 0
+              ? 'reading'
+              : 'unread',
+      },
+      ['moonPath', 'moonId', 'manualProgress'],
+    );
+  try {
+    state.books = state.books.flatMap((row) => (row.key === combined.key ? [moon, weread] : row));
+    state.sessions = state.sessions.map((row) =>
+      row.bookKey === combined.key && row.source === 'weread'
+        ? { ...row, bookKey: weReadKey }
+        : row,
+    );
+    state.highlights = (state.highlights || []).map((row) =>
+      row.bookKey === combined.key &&
+      (row.source === 'weread' || row.bookmark === '__YUEJI_WEREAD__')
+        ? { ...row, bookKey: weReadKey }
+        : row,
+    );
+    if (highlightsDbReady) await remapSourceHighlightsBookKey(combined.key, weReadKey, 'weread');
+    await window.yuejiPersistSplitWeReadBook?.(weread);
+    window.yuejiRefreshWeReadBookIndexes?.();
+    save();
+    return { moon, weread };
+  } catch (error) {
+    state = before;
+    if (highlightsDbReady)
+      try {
+        await remapSourceHighlightsBookKey(weReadKey, combined.key, 'weread');
+      } catch {}
+    window.yuejiRefreshWeReadBookIndexes?.();
+    try {
+      save();
+    } catch {}
+    throw error;
+  }
+}
+const splitMergedBookFallback = splitMergedBook;
+async function splitMergedBookLossless(bookKey) {
+  const combined = book(bookKey),
+    archives = combined?.sourceArchives;
+  if (!archives?.moon || !archives?.weread) return splitMergedBookFallback(bookKey);
+  const before = clone(state),
+    moon = { ...clone(archives.moon), sources: ['moon'] },
+    weread = { ...clone(archives.weread), sources: ['weread'] };
+  delete moon.sourceArchives;
+  delete weread.sourceArchives;
+  const oldKey = String(combined.key),
+    moonKeyValue = String(moon.key || oldKey),
+    wereadKey = String(weread.key || `wr:${combined.weReadBookId}`);
+  moon.key = moonKeyValue;
+  weread.key = wereadKey;
+  try {
+    state.books = state.books.flatMap((row) => (row.key === oldKey ? [moon, weread] : row));
+    state.sessions = state.sessions.map((row) =>
+      row.bookKey !== oldKey
+        ? row
+        : { ...row, bookKey: row.source === 'weread' ? wereadKey : moonKeyValue },
+    );
+    Object.values(state.journals || {}).forEach((row) => {
+      if (row?.bookKey === oldKey) row.bookKey = moonKeyValue;
+    });
+    state.highlights = (state.highlights || []).map((row) =>
+      row.bookKey !== oldKey
+        ? row
+        : {
+            ...row,
+            bookKey:
+              row.source === 'weread' || row.bookmark === '__YUEJI_WEREAD__'
+                ? wereadKey
+                : moonKeyValue,
+          },
+    );
+    if (highlightsDbReady) await remapSourceHighlightsBookKey(oldKey, wereadKey, 'weread');
+    await window.yuejiPersistSplitWeReadBook?.(weread);
+    window.yuejiRefreshWeReadBookIndexes?.();
+    save();
+    return { moon, weread };
+  } catch (error) {
+    state = before;
+    if (highlightsDbReady)
+      try {
+        await remapSourceHighlightsBookKey(wereadKey, oldKey, 'weread');
+      } catch {}
+    window.yuejiRefreshWeReadBookIndexes?.();
+    try {
+      save();
+    } catch {}
+    throw error;
+  }
+}
+window.yuejiSplitMergedBook = splitMergedBookLossless;
+function highlightDb() {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const req = indexedDB.open(HIGHLIGHTS_DB, 6),
+      fail = (error) => {
+        if (settled) return;
+        settled = true;
+        reject(error);
+      };
+    req.onupgradeneeded = () => {
+      const db = req.result,
+        tx = req.transaction,
+        store = db.objectStoreNames.contains(HIGHLIGHTS_STORE)
+          ? tx.objectStore(HIGHLIGHTS_STORE)
+          : db.createObjectStore(HIGHLIGHTS_STORE, { keyPath: 'id' });
+      if (!store.indexNames.contains('bookKey'))
+        store.createIndex('bookKey', 'bookKey', { unique: false });
+      if (!store.indexNames.contains('date')) store.createIndex('date', 'date', { unique: false });
+      if (!store.indexNames.contains('source'))
+        store.createIndex('source', 'source', { unique: false });
+      if (!store.indexNames.contains('sortTime'))
+        store.createIndex('sortTime', 'sortTime', { unique: false });
+      if (!store.indexNames.contains('bookSort'))
+        store.createIndex('bookSort', ['bookKey', 'sortTime'], { unique: false });
+      if (!store.indexNames.contains('kind')) store.createIndex('kind', 'kind', { unique: false });
+      const legacyTrash = db.objectStoreNames.contains(HIGHLIGHTS_TRASH_STORE)
+          ? tx.objectStore(HIGHLIGHTS_TRASH_STORE)
+          : db.createObjectStore(HIGHLIGHTS_TRASH_STORE, { keyPath: 'bookKey' }),
+        trashRows = db.objectStoreNames.contains(HIGHLIGHTS_TRASH_ROW_STORE)
+          ? tx.objectStore(HIGHLIGHTS_TRASH_ROW_STORE)
+          : db.createObjectStore(HIGHLIGHTS_TRASH_ROW_STORE, { keyPath: 'trashId' });
+      if (!trashRows.indexNames.contains('bookKey'))
+        trashRows.createIndex('bookKey', 'bookKey', { unique: false });
+      if (!db.objectStoreNames.contains(HIGHLIGHTS_STAGE_STORE))
+        db.createObjectStore(HIGHLIGHTS_STAGE_STORE, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(HIGHLIGHTS_TRASH_STAGE_STORE))
+        db.createObjectStore(HIGHLIGHTS_TRASH_STAGE_STORE, { keyPath: 'trashId' });
+      if (req.oldVersion > 0 && req.oldVersion < 3) {
+        const cursor = store.openCursor();
+        cursor.onsuccess = () => {
+          const c = cursor.result;
+          if (!c) return;
+          c.update(stableHighlight(c.value));
+          c.continue();
+        };
+      }
+      if (req.oldVersion > 0 && req.oldVersion < 5) {
+        const cursor = legacyTrash.openCursor();
+        cursor.onsuccess = () => {
+          const c = cursor.result;
+          if (!c) return;
+          const bookKey = String(c.value?.bookKey || '');
+          (c.value?.items || []).forEach((h, i) => trashRows.put(trashHighlight(h, bookKey, i)));
+          c.continue();
+        };
+      }
+    };
+    req.onsuccess = () => {
+      if (settled) {
+        req.result.close();
+        return;
+      }
+      settled = true;
+      resolve(req.result);
+    };
+    req.onerror = () => fail(req.error);
+    req.onblocked = () => fail(new Error('书摘数据库被其他页面占用'));
+  });
+}
+function stableHighlight(h, i = 0) {
+  const base = { ...(h || {}) };
+  if (!base.source) base.source = base.bookmark === '__YUEJI_WEREAD__' ? 'weread' : 'moon';
+  if (!base.id) {
+    const text = `${base.bookKey || ''}|${base.time || base.date || ''}|${base.quote || ''}|${base.note || ''}|${i}`;
+    let hash = 2166136261;
+    for (const c of text) {
+      hash ^= c.codePointAt(0);
+      hash = Math.imul(hash, 16777619);
+    }
+    base.id = `legacy-${(hash >>> 0).toString(36)}`;
+  }
+  const parsed =
+    typeof base.date === 'string' && /^\d{4}-\d{1,2}-\d{1,2}$/.test(base.date)
+      ? parseDate(base.date).getTime()
+      : 0;
+  base.bookKey = String(base.bookKey || '');
+  base.sortTime = Number(base.time) || (!Number.isNaN(parsed) ? parsed : 0);
+  base.kind = String(base.note || '').trim()
+    ? String(base.quote || '').trim()
+      ? 'mixed'
+      : 'thought'
+    : 'quote';
+  base.searchText = `${base.quote || ''} ${base.note || ''} ${base.bookmark || ''}`.toLowerCase();
+  return base;
+}
+function trashHighlight(h, bookKey, i = 0) {
+  const row = stableHighlight({ ...h, bookKey }, i);
+  return { ...row, trashId: `${bookKey}|${row.id}` };
+}
+async function readHighlightsDb() {
+  const db = await highlightDb();
+  try {
+    return await new Promise((resolve, reject) => {
+      const req = db.transaction(HIGHLIGHTS_STORE).objectStore(HIGHLIGHTS_STORE).getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+async function readHighlightTrashDb() {
+  const db = await highlightDb();
+  try {
+    return await new Promise((resolve, reject) => {
+      const req = db
+          .transaction(HIGHLIGHTS_TRASH_ROW_STORE)
+          .objectStore(HIGHLIGHTS_TRASH_ROW_STORE)
+          .openCursor(),
+        groups = new Map();
+      req.onsuccess = () => {
+        const c = req.result;
+        if (!c) return resolve([...groups].map(([bookKey, items]) => ({ bookKey, items })));
+        const row = c.value,
+          bookKey = String(row.bookKey || '');
+        if (!groups.has(bookKey)) groups.set(bookKey, []);
+        const { trashId, ...highlight } = row;
+        groups.get(bookKey).push(highlight);
+        c.continue();
+      };
+      req.onerror = () => reject(req.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+async function countHighlightsDb(db) {
+  return await new Promise((resolve, reject) => {
+    const req = db.transaction(HIGHLIGHTS_STORE).objectStore(HIGHLIGHTS_STORE).count();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function countStoreDb(db, storeName) {
+  return await new Promise((resolve, reject) => {
+    const req = db.transaction(storeName).objectStore(storeName).count();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function countHighlightsForBooksDb(db, bookKeys) {
+  const keys = [...new Set((bookKeys || []).map(String).filter(Boolean))],
+    index = db.transaction(HIGHLIGHTS_STORE).objectStore(HIGHLIGHTS_STORE).index('bookKey');
+  await Promise.all(
+    keys.map(
+      (key) =>
+        new Promise((resolve, reject) => {
+          const req = index.count(IDBKeyRange.only(key));
+          req.onsuccess = () => {
+            highlightBookCountsCache.set(key, req.result);
+            resolve();
+          };
+          req.onerror = () => reject(req.error);
+        }),
+    ),
+  );
+}
+async function rebuildHighlightBookCountsDb(db) {
+  const counts = new Map();
+  await new Promise((resolve, reject) => {
+    const req = db
+      .transaction(HIGHLIGHTS_STORE)
+      .objectStore(HIGHLIGHTS_STORE)
+      .index('bookKey')
+      .openKeyCursor();
+    req.onsuccess = () => {
+      const c = req.result;
+      if (!c) return resolve();
+      const key = String(c.key || '');
+      if (key) counts.set(key, (counts.get(key) || 0) + 1);
+      c.continue();
+    };
+    req.onerror = () => reject(req.error);
+  });
+  highlightBookCountsCache = counts;
+}
+function queueHighlightWrite(work) {
+  const next = highlightsWriteQueue.then(work, work);
+  highlightsWriteQueue = next.catch(() => {});
+  return next;
+}
+function idbTxDone(tx, message) {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error || new Error(message));
+    tx.onabort = () => reject(tx.error || new Error(message));
+  });
+}
+async function writeHighlightsDb(items) {
+  const source = Array.isArray(items) ? items : [];
+  if (!source.length) return;
+  return queueHighlightWrite(async () => {
+    const db = await highlightDb();
+    try {
+      let tx = db.transaction(HIGHLIGHTS_STAGE_STORE, 'readwrite'),
+        done = idbTxDone(tx, '书摘暂存区无法清理');
+      tx.objectStore(HIGHLIGHTS_STAGE_STORE).clear();
+      await done;
+      await stageHighlightRows(db, HIGHLIGHTS_STAGE_STORE, source);
+      tx = db.transaction([HIGHLIGHTS_STORE, HIGHLIGHTS_STAGE_STORE], 'readwrite');
+      done = idbTxDone(tx, '书摘提交失败');
+      const target = tx.objectStore(HIGHLIGHTS_STORE),
+        stage = tx.objectStore(HIGHLIGHTS_STAGE_STORE),
+        cursor = stage.openCursor();
+      cursor.onsuccess = () => {
+        const c = cursor.result;
+        if (c) {
+          target.put(c.value);
+          c.continue();
+        } else stage.clear();
+      };
+      cursor.onerror = () => tx.abort();
+      await done;
+      highlightsCountCache = await countHighlightsDb(db);
+      await countHighlightsForBooksDb(
+        db,
+        source.map((x) => x?.bookKey),
+      );
+      state.highlightsCount = highlightsCountCache;
+    } finally {
+      db.close();
+    }
+  });
+}
+async function putHighlightsDb(items) {
+  return writeHighlightsDb(items);
+}
+async function remapHighlightsBookKeys(keyMap) {
+  const entries = [...keyMap.entries()].filter(([from, to]) => from && to && from !== to);
+  if (!entries.length || !highlightsDbReady) return;
+  return queueHighlightWrite(async () => {
+    const db = await highlightDb();
+    try {
+      const tx = db.transaction(HIGHLIGHTS_STORE, 'readwrite'),
+        done = idbTxDone(tx, '跨平台书摘归并失败'),
+        index = tx.objectStore(HIGHLIGHTS_STORE).index('bookKey');
+      for (const [from, to] of entries) {
+        const req = index.openCursor(IDBKeyRange.only(String(from)));
+        req.onsuccess = () => {
+          const cursor = req.result;
+          if (!cursor) return;
+          cursor.update(stableHighlight({ ...cursor.value, bookKey: String(to) }));
+          cursor.continue();
+        };
+        req.onerror = () => tx.abort();
+      }
+      await done;
+      await rebuildHighlightBookCountsDb(db);
+      highlightsCountCache = await countHighlightsDb(db);
+      state.highlightsCount = highlightsCountCache;
+    } finally {
+      db.close();
+    }
+  });
+}
+async function clearHighlightStages(db) {
+  const tx = db.transaction([HIGHLIGHTS_STAGE_STORE, HIGHLIGHTS_TRASH_STAGE_STORE], 'readwrite'),
+    done = idbTxDone(tx, '书摘暂存区无法清理');
+  tx.objectStore(HIGHLIGHTS_STAGE_STORE).clear();
+  tx.objectStore(HIGHLIGHTS_TRASH_STAGE_STORE).clear();
+  await done;
+}
+async function stageHighlightRows(db, storeName, rows, trashBookKey = '') {
+  for (let start = 0; start < rows.length; start += 250) {
+    const tx = db.transaction(storeName, 'readwrite'),
+      done = idbTxDone(tx, '书摘分批暂存被中止'),
+      store = tx.objectStore(storeName),
+      end = Math.min(rows.length, start + 250);
+    for (let i = start; i < end; i++)
+      store.put(
+        trashBookKey ? trashHighlight(rows[i], trashBookKey, i) : stableHighlight(rows[i], i),
+      );
+    await done;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
+async function stageTrashRecords(db, records) {
+  for (const item of records || []) {
+    const bookKey = String(item?.book?.key || item?.bookKey || '');
+    if (bookKey)
+      await stageHighlightRows(
+        db,
+        HIGHLIGHTS_TRASH_STAGE_STORE,
+        item.highlights || item.items || [],
+        bookKey,
+      );
+  }
+}
+function markHighlightReplaceStaged() {
+  try {
+    const pending = JSON.parse(localStorage.getItem(HIGHLIGHTS_PENDING));
+    if (pending) {
+      pending.phase = 'staged';
+      localStorage.setItem(HIGHLIGHTS_PENDING, JSON.stringify(pending));
+    }
+  } catch {}
+}
+async function replaceHighlightsDb(items, trashRecords) {
+  const source = Array.isArray(items) ? items : [],
+    replaceTrash = Array.isArray(trashRecords),
+    trash = replaceTrash ? trashRecords : [];
+  return queueHighlightWrite(async () => {
+    const db = await highlightDb();
+    try {
+      await clearHighlightStages(db);
+      await stageHighlightRows(db, HIGHLIGHTS_STAGE_STORE, source);
+      if (replaceTrash) await stageTrashRecords(db, trash);
+      const activeStaged = await countStoreDb(db, HIGHLIGHTS_STAGE_STORE),
+        trashStaged = replaceTrash ? await countStoreDb(db, HIGHLIGHTS_TRASH_STAGE_STORE) : null;
+      markHighlightReplaceStaged();
+      await new Promise((resolve, reject) => {
+        const names = replaceTrash
+            ? [
+                HIGHLIGHTS_STORE,
+                HIGHLIGHTS_STAGE_STORE,
+                HIGHLIGHTS_TRASH_ROW_STORE,
+                HIGHLIGHTS_TRASH_STAGE_STORE,
+                HIGHLIGHTS_TRASH_STORE,
+              ]
+            : [HIGHLIGHTS_STORE, HIGHLIGHTS_STAGE_STORE],
+          tx = db.transaction(names, 'readwrite'),
+          done = idbTxDone(tx, '书摘与回收区原子替换失败'),
+          active = tx.objectStore(HIGHLIGHTS_STORE),
+          activeStage = tx.objectStore(HIGHLIGHTS_STAGE_STORE);
+        active.clear();
+        let copied = 0,
+          needed = replaceTrash ? 2 : 1;
+        const finish = () => {
+          copied++;
+          if (copied === needed) {
+            activeStage.clear();
+            if (replaceTrash) tx.objectStore(HIGHLIGHTS_TRASH_STAGE_STORE).clear();
+          }
+        };
+        const activeCursor = activeStage.openCursor();
+        activeCursor.onsuccess = () => {
+          const c = activeCursor.result;
+          if (c) {
+            active.put(c.value);
+            c.continue();
+          } else finish();
+        };
+        activeCursor.onerror = () => tx.abort();
+        if (replaceTrash) {
+          const trashTarget = tx.objectStore(HIGHLIGHTS_TRASH_ROW_STORE),
+            trashStage = tx.objectStore(HIGHLIGHTS_TRASH_STAGE_STORE);
+          trashTarget.clear();
+          tx.objectStore(HIGHLIGHTS_TRASH_STORE).clear();
+          const trashCursor = trashStage.openCursor();
+          trashCursor.onsuccess = () => {
+            const c = trashCursor.result;
+            if (c) {
+              trashTarget.put(c.value);
+              c.continue();
+            } else finish();
+          };
+          trashCursor.onerror = () => tx.abort();
+        }
+        done.then(resolve, reject);
+      });
+      const activeStored = await countHighlightsDb(db),
+        trashStored = replaceTrash
+          ? await countStoreDb(db, HIGHLIGHTS_TRASH_ROW_STORE)
+          : trashStaged;
+      if (activeStored !== activeStaged || (replaceTrash && trashStored !== trashStaged))
+        throw new Error('书摘与回收区写入数量校验失败');
+      highlightsCountCache = activeStored;
+      await rebuildHighlightBookCountsDb(db);
+      state.highlightsCount = activeStored;
+    } finally {
+      db.close();
+    }
+  });
+}
+async function queryHighlightsDb({ bookKey = '', query = '', kind = 'all', limit = 80 } = {}) {
+  const db = await highlightDb();
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(HIGHLIGHTS_STORE),
+        store = tx.objectStore(HIGHLIGHTS_STORE),
+        source = bookKey ? store.index('bookSort') : store.index('sortTime'),
+        range = bookKey
+          ? IDBKeyRange.bound([bookKey, 0], [bookKey, Number.MAX_SAFE_INTEGER])
+          : null,
+        req = source.openCursor(range, 'prev'),
+        rows = [];
+      let matched = 0;
+      const needle = String(query || '')
+        .trim()
+        .toLowerCase();
+      req.onsuccess = () => {
+        const cursor = req.result;
+        if (!cursor) return resolve({ rows, hasMore: false, totalMatched: matched });
+        const h = stableHighlight(cursor.value),
+          kindOk =
+            kind === 'all' ||
+            (kind === 'quotes' && String(h.quote || '').trim()) ||
+            (kind === 'thoughts' && String(h.note || '').trim()),
+          queryOk = !needle || h.searchText.includes(needle);
+        if (kindOk && queryOk) {
+          matched++;
+          if (rows.length < limit) rows.push(h);
+          else return resolve({ rows, hasMore: true, totalMatched: matched });
+        }
+        cursor.continue();
+      };
+      req.onerror = () => reject(req.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+async function deleteHighlightsByBook(bookKey, knownRows) {
+  const rows = Array.isArray(knownRows)
+      ? knownRows
+      : (await queryHighlightsDb({ bookKey, limit: Number.MAX_SAFE_INTEGER })).rows,
+    db = await highlightDb();
+  try {
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(HIGHLIGHTS_STORE, 'readwrite'),
+        store = tx.objectStore(HIGHLIGHTS_STORE);
+      rows.forEach((h) => store.delete(h.id));
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+    highlightsCountCache = await countHighlightsDb(db);
+    highlightBookCountsCache.set(String(bookKey), 0);
+    state.highlightsCount = highlightsCountCache;
+    return rows;
+  } finally {
+    db.close();
+  }
+}
+async function clearHighlightTrash() {
+  const db = await highlightDb();
+  try {
+    const tx = db.transaction([HIGHLIGHTS_TRASH_ROW_STORE, HIGHLIGHTS_TRASH_STORE], 'readwrite');
+    tx.objectStore(HIGHLIGHTS_TRASH_ROW_STORE).clear();
+    tx.objectStore(HIGHLIGHTS_TRASH_STORE).clear();
+    await idbTxDone(tx, '回收区无法清理');
+  } finally {
+    db.close();
+  }
+}
+async function deleteTrashRows(store, bookKey) {
+  return await new Promise((resolve, reject) => {
+    const req = store.index('bookKey').openCursor(IDBKeyRange.only(String(bookKey)));
+    req.onsuccess = () => {
+      const c = req.result;
+      if (!c) return resolve();
+      c.delete();
+      c.continue();
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+async function putHighlightTrash(bookKey, items) {
+  const key = String(bookKey),
+    db = await highlightDb();
+  try {
+    let tx = db.transaction(HIGHLIGHTS_TRASH_ROW_STORE, 'readwrite'),
+      done = idbTxDone(tx, '旧回收记录清理失败');
+    await deleteTrashRows(tx.objectStore(HIGHLIGHTS_TRASH_ROW_STORE), key);
+    await done;
+    tx = db.transaction(HIGHLIGHTS_TRASH_ROW_STORE, 'readwrite');
+    done = idbTxDone(tx, '回收记录保存失败');
+    const store = tx.objectStore(HIGHLIGHTS_TRASH_ROW_STORE);
+    (items || []).forEach((h, i) => store.put(trashHighlight(h, key, i)));
+    await done;
+  } finally {
+    db.close();
+  }
+}
+async function getHighlightTrash(bookKey) {
+  const db = await highlightDb();
+  try {
+    return await new Promise((resolve, reject) => {
+      const req = db
+          .transaction(HIGHLIGHTS_TRASH_ROW_STORE)
+          .objectStore(HIGHLIGHTS_TRASH_ROW_STORE)
+          .index('bookKey')
+          .openCursor(IDBKeyRange.only(String(bookKey))),
+        rows = [];
+      req.onsuccess = () => {
+        const c = req.result;
+        if (!c) return resolve(rows);
+        const { trashId, ...highlight } = c.value;
+        rows.push(highlight);
+        c.continue();
+      };
+      req.onerror = () => reject(req.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+async function deleteHighlightTrash(bookKey) {
+  const db = await highlightDb();
+  try {
+    const tx = db.transaction(HIGHLIGHTS_TRASH_ROW_STORE, 'readwrite'),
+      done = idbTxDone(tx, '回收记录删除失败');
+    await deleteTrashRows(tx.objectStore(HIGHLIGHTS_TRASH_ROW_STORE), bookKey);
+    await done;
+  } finally {
+    db.close();
+  }
+}
+async function moveHighlightsToTrash(bookKey) {
+  const key = String(bookKey),
+    db = await highlightDb();
+  try {
+    const tx = db.transaction([HIGHLIGHTS_STORE, HIGHLIGHTS_TRASH_ROW_STORE], 'readwrite'),
+      done = idbTxDone(tx, '书摘移入回收区失败'),
+      source = tx.objectStore(HIGHLIGHTS_STORE),
+      trash = tx.objectStore(HIGHLIGHTS_TRASH_ROW_STORE);
+    await new Promise((resolve, reject) => {
+      const clear = trash.index('bookKey').openCursor(IDBKeyRange.only(key));
+      clear.onsuccess = () => {
+        const old = clear.result;
+        if (old) {
+          old.delete();
+          old.continue();
+          return;
+        }
+        const move = source.index('bookKey').openCursor(IDBKeyRange.only(key));
+        move.onsuccess = () => {
+          const row = move.result;
+          if (!row) return resolve();
+          trash.put(trashHighlight(row.value, key));
+          row.delete();
+          row.continue();
+        };
+        move.onerror = () => reject(move.error);
+      };
+      clear.onerror = () => reject(clear.error);
+    });
+    await done;
+    highlightsCountCache = await countHighlightsDb(db);
+    highlightBookCountsCache.set(key, 0);
+    state.highlightsCount = highlightsCountCache;
+  } finally {
+    db.close();
+  }
+}
+function highlightCount(items) {
+  return new Set((Array.isArray(items) ? items : []).map((h, i) => stableHighlight(h, i).id)).size;
+}
+function compactStateFor(value, count) {
+  const trash = (value.bookTrash || []).map((x) => ({
+      ...x,
+      highlights: [],
+      highlightsInDb: true,
+    })),
+    base = {
+      ...value,
+      highlights: [],
+      bookTrash: trash,
+      highlightsStorage: 'indexeddb-v6',
+      highlightsCount: count,
+    };
+  return typeof window.yuejiCompactExternalState === 'function'
+    ? window.yuejiCompactExternalState(base)
+    : base;
+}
+function compactState() {
+  return highlightsDbReady ? compactStateFor(state, highlightsCountCache) : state;
+}
+function markDataRevision() {
+  dataRevision++;
+  window.__yuejiDataRevision = dataRevision;
+}
+function save() {
+  sessionDateIndex = null;
+  localStorage.setItem(STORAGE, JSON.stringify(compactState()));
+  markDataRevision();
+}
+window.yuejiDataRevision = () => dataRevision;
+window.yuejiMarkDataRevision = () => {
+  sessionDateIndex = null;
+  markDataRevision();
+  window.dispatchEvent(
+    new CustomEvent('yueji:data-changed', { detail: { revision: dataRevision } }),
+  );
+};
+async function persistHighlights() {
+  if (!highlightsDbReady) return;
+  if (state.highlights?.length) {
+    await putHighlightsDb(state.highlights);
+    state.highlights = [];
+  }
+  save();
+}
+async function recoverPendingHighlightReplace() {
+  const raw = localStorage.getItem(HIGHLIGHTS_PENDING);
+  let db;
+  try {
+    db = await highlightDb();
+    if (!raw) {
+      const activeStage = await countStoreDb(db, HIGHLIGHTS_STAGE_STORE),
+        trashStage = await countStoreDb(db, HIGHLIGHTS_TRASH_STAGE_STORE);
+      if (activeStage || trashStage) await clearHighlightStages(db);
+      return true;
+    }
+    const pending = JSON.parse(raw);
+    const activeStage = await countStoreDb(db, HIGHLIGHTS_STAGE_STORE),
+      trashStage = await countStoreDb(db, HIGHLIGHTS_TRASH_STAGE_STORE),
+      stored = await countHighlightsDb(db),
+      trashStored = await countStoreDb(db, HIGHLIGHTS_TRASH_ROW_STORE),
+      trashOk = pending.trashCount === undefined || trashStored === Number(pending.trashCount);
+    if (!pending.phase) {
+      if (activeStage !== 0 || stored !== Number(pending.count) || !trashOk) return false;
+    } else if (pending.phase !== 'staged' || activeStage > 0 || trashStage > 0) {
+      await clearHighlightStages(db);
+      localStorage.removeItem(HIGHLIGHTS_PENDING);
+      return true;
+    } else if (stored !== Number(pending.count) || !trashOk) return false;
+    const next = JSON.parse(pending.nextRaw);
+    localStorage.setItem(STORAGE, pending.nextRaw);
+    state = normalize(next);
+    localStorage.removeItem(HIGHLIGHTS_PENDING);
+    return true;
+  } catch (error) {
+    console.warn('Pending highlight replacement could not be recovered', error);
+    return false;
+  } finally {
+    db?.close();
+  }
+}
+async function initHighlightsStorage() {
+  if (!(await recoverPendingHighlightReplace())) {
+    highlightsDbReady = false;
+    setTimeout(() => {
+      try {
+        toast('上次数据迁移尚未完成，已暂停写入；请保留当前网页数据');
+      } catch {}
+    }, 0);
+    return;
+  }
+  const legacy = [...(state.highlights || [])],
+    expected = Number(state.highlightsCount) || 0,
+    wasIndexed = /^indexeddb-v/.test(state.highlightsStorage || '');
+  try {
+    const db = await highlightDb();
+    let stored = await countHighlightsDb(db);
+    await rebuildHighlightBookCountsDb(db);
+    db.close();
+    if (wasIndexed && !legacy.length && expected !== stored)
+      throw new Error(`书摘数据库数量异常：应有 ${expected} 条，实际读取 ${stored} 条`);
+    if (legacy.length) {
+      await putHighlightsDb(legacy);
+      stored = highlightsCountCache;
+    }
+    for (const item of state.bookTrash || []) {
+      if (item?.book?.key && item.highlights?.length)
+        await putHighlightTrash(item.book.key, item.highlights);
+    }
+    highlightsCountCache = stored;
+    state.highlightsCount = stored;
+    state.highlights = [];
+    highlightsDbReady = true;
+    save();
+    if (page === 'notes') setTimeout(renderNotes, 0);
+  } catch (error) {
+    highlightsDbReady = false;
+    state.highlights = legacy;
+    console.warn('IndexedDB highlights unavailable; keeping legacy storage', error);
+    setTimeout(() => {
+      try {
+        toast(
+          wasIndexed
+            ? '书摘数据库数量异常，已停止写入，请勿清理网站数据'
+            : '书摘数据库不可用，当前继续使用旧储存',
+        );
+      } catch {}
+    }, 0);
+  }
+}
+window.yuejiPersistHighlights = persistHighlights;
+window.yuejiPutHighlights = putHighlightsDb;
+window.yuejiQueryHighlights = queryHighlightsDb;
+window.yuejiReadAllHighlights = readHighlightsDb;
+window.yuejiDeleteHighlightsByBook = deleteHighlightsByBook;
+window.yuejiMoveHighlightsToTrash = moveHighlightsToTrash;
+window.yuejiHighlightCount = () =>
+  highlightsDbReady ? highlightsCountCache : highlightCount(state.highlights);
+window.yuejiHighlightCountForBook = (key) =>
+  highlightsDbReady
+    ? highlightBookCountsCache.get(String(key)) || 0
+    : (state.highlights || []).filter((x) => String(x.bookKey) === String(key)).length;
+window.yuejiHighlightsDbReady = () => highlightsDbReady;
+window.yuejiPutHighlightTrash = putHighlightTrash;
+window.yuejiGetHighlightTrash = getHighlightTrash;
+window.yuejiDeleteHighlightTrash = deleteHighlightTrash;
+function rgb(hex) {
+  const h = hex.replace('#', '');
+  const n = parseInt(h, 16);
+  return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
+}
+function applyAccent() {
+  document.documentElement.style.setProperty('--accent', state.accent);
+  document.documentElement.style.setProperty('--accent-rgb', rgb(state.accent));
+  document
+    .querySelectorAll('[data-color]')
+    .forEach((b) => b.classList.toggle('active', b.dataset.color === state.accent));
+  $('customColor').value = state.accent;
+}
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(window.__toast);
+  window.__toast = setTimeout(() => t.classList.remove('show'), 1800);
+}
+function esc(s = '') {
+  return String(s).replace(
+    /[&<>"']/g,
+    (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[m],
+  );
+}
+function fmtDate(key) {
+  const d = parseDate(key);
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+}
+function book(key) {
+  return state.books.find((b) => b.key === key);
+}
+function effectiveSessions(rows = state.sessions) {
+  const byDate = new Map();
+  for (const s of rows || []) {
+    if (!s?.date) continue;
+    const day = byDate.get(s.date) || [];
+    day.push(s);
+    byDate.set(s.date, day);
+  }
+  const out = [];
+  for (const day of byDate.values()) {
+    const hasTotal = day.some((s) => s.source === 'weread' && s.aggregate === true && !s.bookKey);
+    out.push(...day.filter((s) => !hasTotal || s.source !== 'weread' || s.aggregate === true));
+  }
+  return out;
+}
+function effectiveReadDates(rows = state.sessions, { includeJournals = true, prefix = '' } = {}) {
+  const effective = effectiveSessions(rows),
+    dates = new Set(effective.map((s) => s.date).filter(Boolean));
+  if (!prefix && rows !== state.sessions) {
+    const months = [
+      ...new Set(effective.map((s) => String(s.date || '').slice(0, 7)).filter(Boolean)),
+    ];
+    prefix = months.length === 1 ? months[0] : months.length ? '' : $('monthPicker')?.value || '';
+  }
+  if (includeJournals)
+    Object.values(state.journals || {}).forEach((j) => {
+      if (j?.read && j.date && (!prefix || String(j.date).startsWith(prefix))) dates.add(j.date);
+    });
+  return dates;
+}
+function verifiedBookDates(b) {
+  return [...new Set(window.yuejiVerifiedWeReadActivityDates?.(b) || [])].filter(Boolean).sort();
+}
+function manualBooksInPeriod(prefix) {
+  return Object.values(state.journals || {})
+    .filter((j) => j?.read && j.bookKey && String(j.date || '').startsWith(prefix))
+    .map((j) => String(j.bookKey));
+}
+window.yuejiEffectiveSessions = effectiveSessions;
+window.yuejiEffectiveReadDates = effectiveReadDates;
+window.yuejiVerifiedBookDates = verifiedBookDates;
+window.yuejiManualBooksInPeriod = manualBooksInPeriod;
+function dayData(key) {
+  if (!sessionDateIndex) {
+    sessionDateIndex = new Map();
+    state.sessions.forEach((s) => {
+      if (!s.date) return;
+      const rows = sessionDateIndex.get(s.date) || [];
+      rows.push(s);
+      sessionDateIndex.set(s.date, rows);
+    });
+  }
+  const ss = sessionDateIndex.get(key) || [],
+    effective = effectiveSessions(ss),
+    j = state.journals[key];
+  return {
+    sessions: ss,
+    effectiveSessions: effective,
+    journal: j,
+    read: ss.length > 0 || !!j?.read,
+    minutes: effective.reduce((a, b) => a + (+b.minutes || 0), 0),
+    words: effective.reduce((a, b) => a + (+b.words || 0), 0),
+    books: new Set(ss.map((s) => s.bookKey).filter(Boolean)),
+  };
+}
+document.querySelectorAll('.nav-btn').forEach((b) => (b.onclick = () => switchPage(b.dataset.go)));
+function statusOf(b) {
+  if (b.status) return b.status;
+  if (+b.progress >= 100) return 'done';
+  if (+b.progress > 0) return 'reading';
+  return 'unread';
+}
+$('bookSearch').oninput = renderLibrary;
+$('librarySeg').onclick = (e) => {
+  const b = e.target.closest('[data-filter]');
+  if (!b) return;
+  libraryFilter = b.dataset.filter;
+  document
+    .querySelectorAll('#librarySeg button')
+    .forEach((x) => x.classList.toggle('active', x === b));
+  renderLibrary();
+};
+function renderBookOptions() {
+  const visible = state.books.filter((b) => !b.hidden),
+    opts =
+      '<option value="">不指定</option>' +
+      visible.map((b) => `<option value="${esc(b.key)}">${esc(b.title)}</option>`).join('');
+  $('journalBook').innerHTML = opts;
+  $('noteBookFilter').innerHTML =
+    '<option value="">全部书籍</option>' +
+    visible.map((b) => `<option value="${esc(b.key)}">${esc(b.title)}</option>`).join('');
+}
+function renderAnalytics() {
+  let total = 0,
+    words = 0;
+  const days = new Set(),
+    monthSums = Array(12).fill(0),
+    year = String(today.getFullYear());
+  effectiveSessions().forEach((s) => {
+    const mins = +s.minutes || 0;
+    total += mins;
+    words += +s.words || 0;
+    if (s.date) days.add(s.date);
+    if (String(s.date || '').startsWith(year + '-')) {
+      const month = +String(s.date).slice(5, 7);
+      if (month >= 1 && month <= 12) monthSums[month - 1] += mins;
+    }
+  });
+  $('kpiGrid').innerHTML = [
+    ['累计阅读', total.toLocaleString(), '分钟'],
+    ['阅读天数', days.size, '天'],
+    ['书架', state.books.filter((b) => !b.hidden).length, '本'],
+    ['阅读字数', words.toLocaleString(), '字'],
+  ]
+    .map((x) => `<div class="kpi"><b>${x[1]}</b><span>${x[0]} · ${x[2]}</span></div>`)
+    .join('');
+  const cats = {};
+  state.books
+    .filter((b) => !b.hidden)
+    .forEach((b) => (cats[b.category || '未分类'] = (cats[b.category || '未分类'] || 0) + 1));
+  const entries = Object.entries(cats).sort((a, b) => b[1] - a[1]);
+  $('categoryTreemap').innerHTML = entries
+    .map(
+      (x, i) =>
+        `<div class="tree-cell" style="background:${palette[i % palette.length]}"><b>${esc(x[0])}</b><span>${x[1]}</span></div>`,
+    )
+    .join('');
+  $('categoryLegend').innerHTML = entries
+    .map((x) => `<span>● ${esc(x[0])} ${x[1]}</span>`)
+    .join('');
+  const visibleBooks = state.books.filter((b) => !b.hidden),
+    groups = [
+      ['未开始', (b) => +b.progress === 0],
+      ['1—25%', (b) => +b.progress > 0 && +b.progress <= 25],
+      ['26—50%', (b) => +b.progress > 25 && +b.progress <= 50],
+      ['51—99%', (b) => +b.progress > 50 && +b.progress < 100],
+      ['已读完', (b) => +b.progress >= 100],
+    ];
+  $('progressBars').innerHTML = groups
+    .map(([n, f]) => {
+      const c = visibleBooks.filter(f).length,
+        p = visibleBooks.length ? (c / visibleBooks.length) * 100 : 0;
+      return `<div class="bar-row"><span>${n}</span><div class="bar"><i style="width:${p}%"></i></div><b>${c}</b></div>`;
+    })
+    .join('');
+  const months = monthSums.map((mins, i) => ({ i, mins })),
+    max = Math.max(1, ...monthSums);
+  $('timelineHeat').innerHTML = months
+    .map(
+      (x) =>
+        `<div class="heat-month" style="--a:${0.08 + (0.65 * x.mins) / max}" title="${x.mins} 分钟">${x.i + 1}月</div>`,
+    )
+    .join('');
+}
+function monthWeReadActivity(val) {
+  const start = `${val}-01`,
+    end = `${val}-31`,
+    candidates = [];
+  for (const b of state.books) {
+    if (b.hidden || !b.sources?.includes('weread')) continue;
+    const verified = new Set(verifiedBookDates(b).filter((date) => date >= start && date <= end));
+    if (!verified.size) continue;
+    const rows = (b.weReadSnapshots || [])
+        .filter((x) => x?.date)
+        .sort((a, c) => String(a.date).localeCompare(String(c.date))),
+      lastDate = [...verified].sort().at(-1),
+      lastIndex = rows.map((x) => x.date).lastIndexOf(lastDate),
+      last = rows[lastIndex],
+      before = rows.slice(0, lastIndex).at(-1),
+      seconds = before ? Math.max(0, (+last?.seconds || 0) - (+before?.seconds || 0)) : 0,
+      progress = before ? Math.max(0, (+last?.progress || 0) - (+before?.progress || 0)) : 0,
+      score = seconds || progress * 60 || 1,
+      label = seconds
+        ? `累计阅读时间增加约 ${Math.round(seconds / 60)} 分钟`
+        : progress
+          ? `同步期间进度增加 ${Math.round(progress * 10) / 10}%`
+          : '同步快照确认本月有阅读活动';
+    candidates.push({ book: b, score, label, latest: lastDate });
+  }
+  return (
+    candidates.sort(
+      (a, b) => b.score - a.score || String(b.latest).localeCompare(String(a.latest)),
+    )[0] || null
+  );
+}
+function monthWeReadBooks(val) {
+  const start = `${val}-01`,
+    end = `${val}-31`;
+  return state.books.filter(
+    (b) =>
+      !b.hidden &&
+      b.sources?.includes('weread') &&
+      verifiedBookDates(b).some((date) => date >= start && date <= end),
+  );
+}
+function monthBookCard(b, evidence) {
+  return `<div class="month-book" data-book-key="${esc(b.key)}"><span class="month-book-cover cover-art" style="--cover:${b.visualColor || b.color || state.accent}"><img data-cover-key="${esc(b.key)}" alt="" loading="lazy"><i>${esc(b.title)}</i></span><span class="month-book-copy"><b>${esc(b.title)}</b><small>${esc(b.author || '作者待补充')}</small><small class="month-book-evidence">${esc(evidence)}</small></span></div>`;
+}
+function renderMonthly() {
+  const val = $('monthPicker').value || todayKey.slice(0, 7),
+    [y, m] = val.split('-').map(Number),
+    all = state.sessions.filter((s) => s.date.startsWith(val)),
+    ss = effectiveSessions(all),
+    mins = ss.reduce((a, s) => a + (+s.minutes || 0), 0),
+    words = ss.reduce((a, s) => a + (+s.words || 0), 0),
+    exactKeys = [
+      ...new Set([...all.map((s) => s.bookKey).filter(Boolean), ...manualBooksInPeriod(val)]),
+    ],
+    exactBooks = exactKeys.map(book).filter((b) => b && !b.hidden),
+    exactSet = new Set(exactBooks.map((b) => String(b.key))),
+    tracedBooks = monthWeReadBooks(val).filter((b) => !exactSet.has(String(b.key))),
+    seen = [...exactBooks, ...tracedBooks],
+    hasWeReadTotal = all.some((s) => s.source === 'weread' && s.aggregate === true && !s.bookKey),
+    readDays = effectiveReadDates(all).size;
+  $('monthlyTitle').textContent = `${y}年${m}月 · 阅读月报`;
+  $('monthlyKpis').innerHTML = [
+    ['阅读时长', mins, '分钟'],
+    ['阅读天数', readDays, '天'],
+    ['看过', seen.length, '本'],
+    ['阅读字数', words.toLocaleString(), '字'],
+  ]
+    .map((x) => `<div class="monthly-kpi"><b>${x[1]}</b><span>${x[0]} · ${x[2]}</span></div>`)
+    .join('');
+  $('monthSeenTitle').textContent = `本月看过 · ${seen.length} 本`;
+  $('monthSeenBooks').innerHTML = seen.length
+    ? [
+        ...exactBooks.map((b) => monthBookCard(b, '有逐书日期记录')),
+        ...tracedBooks.map((b) => monthBookCard(b, '微信进度变化证据')),
+      ].join('')
+    : hasWeReadTotal
+      ? '<div class="empty-text">微信读书记录了本月阅读总量，但没有提供能定位到具体书籍的进度变化证据。</div>'
+      : '<div class="empty-text">这个月还没有阅读记录。</div>';
+  hydrateCovers($('monthSeenBooks'));
+  const count = {};
+  all
+    .filter((s) => s.bookKey && !(s.source === 'weread' && s.aggregate))
+    .forEach((s) => (count[s.bookKey] = (count[s.bookKey] || 0) + (+s.minutes || 0)));
+  const top = Object.entries(count)
+      .filter(([key]) => book(key) && !book(key).hidden)
+      .sort((a, b) => b[1] - a[1])[0],
+    activity = top ? null : monthWeReadActivity(val);
+  $('monthTopTitle').textContent = top ? '读得最多' : activity ? '微信进度增长' : '本月高频';
+  $('monthTopBook').innerHTML = top
+    ? `<b>${esc(book(top[0]).title)}</b><div class="section-sub">${top[1]} 分钟 · 有逐书记录</div>`
+    : activity
+      ? `<b>${esc(activity.book.title)}</b><div class="section-sub">${esc(activity.label)}；这不是逐书分钟排行。</div>`
+      : hasWeReadTotal
+        ? '<div class="empty-text">微信读书只提供本月总时长，无法判断哪本读得最多。</div>'
+        : '<div class="empty-text">暂无逐书阅读记录。</div>';
+  const done = seen.filter((b) => statusOf(b) === 'done');
+  $('monthFinished').innerHTML = done.length
+    ? done.map((b) => `<div>${esc(b.title)}</div>`).join('')
+    : '<div class="empty-text">暂无</div>';
+  $('monthSummary').textContent = readDays
+    ? `这个月一共记录了 ${mins} 分钟，留下了 ${Object.values(state.journals).filter((j) => j.date.startsWith(val)).length} 篇手记。${top ? `有逐书记录的数据中，读得最多的是《${book(top[0]).title}》。` : activity ? `微信进度记录显示《${activity.book.title}》较活跃，但微信总时长无法按书拆分。` : hasWeReadTotal ? '微信读书没有提供逐书分钟，因此不生成虚假的图书排行。' : ''}`
+    : '这个月还没有可供总结的记录。';
+}
+$('monthPicker').value = todayKey.slice(0, 7);
+$('monthPicker').onchange = renderMonthly;
+const overlay = $('overlay'),
+  sheets = [...document.querySelectorAll('.sheet')];
+function showSheet(id) {
+  overlay.classList.add('show');
+  $(id).classList.add('show');
+}
+function closeSheets() {
+  overlay.classList.remove('show');
+  sheets.forEach((s) => s.classList.remove('show'));
+}
+overlay.onclick = closeSheets;
+document.querySelectorAll('[data-close]').forEach((b) => (b.onclick = closeSheets));
+$('settingsBtn').onclick = () => {
+  showSheet('settingsSheet');
+};
+function openJournal(key) {
+  const j = state.journals[key] || { date: key };
+  $('journalOriginalDate').value = key;
+  $('journalDate').value = key;
+  $('journalBook').value = j.bookKey || '';
+  $('journalRead').checked = !!j.read;
+  $('journalWhat').value = j.what || '';
+  $('journalQuote').value = j.quote || '';
+  $('journalThought').value = j.thought || '';
+  $('journalSheetTitle').textContent = fmtDate(key);
+  showSheet('journalSheet');
+}
+$('editTodayBtn').onclick = () => openJournal(todayKey);
+$('saveJournal').onclick = () => {
+  const old = $('journalOriginalDate').value,
+    key = $('journalDate').value;
+  if (!key) {
+    toast('请选择日期');
+    return;
+  }
+  if (old !== key) delete state.journals[old];
+  state.journals[key] = {
+    date: key,
+    bookKey: $('journalBook').value,
+    read: $('journalRead').checked,
+    what: $('journalWhat').value.trim(),
+    quote: $('journalQuote').value.trim(),
+    thought: $('journalThought').value.trim(),
+  };
+  save();
+  renderAll();
+  closeSheets();
+  toast('这一天已保存');
+};
+function openBook(key) {
+  const b = book(key);
+  if (!b) return;
+  $('bookKey').value = b.key;
+  $('bookTitle').value = b.title || '';
+  $('bookAuthor').value = b.author || '';
+  $('bookCategory').value = b.category || '';
+  $('bookProgress').value = b.progress ?? '';
+  $('bookFinishedDate').value = b.finishedDate || '';
+  $('bookDataNote').textContent =
+    `来源：${sourceLabel(b)} · 静读天下文件：${b.file || '—'} · 累计 ${b.minutes || 0} 分钟 · ${b.days || 0} 个阅读日`;
+  $('bookSheetTitle').textContent = b.title;
+  showSheet('bookSheet');
+}
+$('saveBook').onclick = () => {
+  const b = book($('bookKey').value);
+  if (!b) return;
+  b.title = $('bookTitle').value.trim() || b.file || '未命名';
+  b.author = $('bookAuthor').value.trim();
+  b.category = $('bookCategory').value.trim();
+  b.progress = Math.max(0, Math.min(100, +$('bookProgress').value || 0));
+  b.progressSource = 'manual';
+  b.finishedDate = $('bookFinishedDate').value;
+  b.status = b.progress >= 100 ? 'done' : b.progress > 0 ? 'reading' : 'unread';
+  save();
+  renderAll();
+  closeSheets();
+  toast('书籍资料已保存');
+};
+$('colorRow').onclick = (e) => {
+  const b = e.target.closest('[data-color]');
+  if (!b) return;
+  state.accent = b.dataset.color;
+  save();
+  applyAccent();
+};
+$('customColor').oninput = (e) => {
+  state.accent = e.target.value;
+  save();
+  applyAccent();
+};
+$('exportBackup').onclick = async () => {
+  const btn = $('exportBackup'),
+    operation = 'export';
+  if (btn.disabled || !beginArchiveOperation(operation)) return;
+  btn.disabled = true;
+  const old = btn.textContent;
+  btn.textContent = '正在生成…';
+  try {
+    toast('正在生成完整备份……');
+    if (window.yuejiHighlightsReady) await window.yuejiHighlightsReady;
+    await highlightsWriteQueue;
+    await new Promise(requestAnimationFrame);
+    const payload = await buildPortableBackup(),
+      stringify = window.yuejiStringifyJson || ((value) => JSON.stringify(value, null, 2)),
+      text = await stringify(payload),
+      blob = new Blob([text], { type: 'application/json' }),
+      a = document.createElement('a'),
+      url = URL.createObjectURL(blob);
+    a.href = url;
+    a.download = `阅迹备份-${todayKey}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    toast('完整备份已导出（包含本地封面）');
+  } catch (e) {
+    toast('备份导出失败，请稍后重试');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+    endArchiveOperation(operation);
+  }
+};
+async function replaceArchiveData(value, demoMode = false) {
+  const before = state,
+    portable = { ...(value || {}) },
+    coverArchive = Array.isArray(portable.localCovers) ? portable.localCovers : [];
+  delete portable.localCovers;
+  const incoming = normalize(portable),
+    rows = incoming.highlights || [],
+    trashRecords = incoming.bookTrash || [];
+  try {
+    if (coverArchive.length) await restoreCoverArchive(coverArchive);
+    if (highlightsDbReady) {
+      const ids = new Set();
+      rows.forEach((h, i) => ids.add(h?.id || stableHighlight(h, i).id));
+      const trashIds = new Set();
+      trashRecords.forEach((item) => {
+        const bookKey = String(item?.book?.key || item?.bookKey || '');
+        (item.highlights || item.items || []).forEach((h, i) => {
+          if (bookKey) trashIds.add(trashHighlight(h, bookKey, i).trashId);
+        });
+      });
+      const count = ids.size,
+        trashCount = trashIds.size,
+        compactTrash = trashRecords.map((item) => ({
+          ...item,
+          highlights: [],
+          highlightsInDb: true,
+        })),
+        next = normalize({
+          ...incoming,
+          bookTrash: compactTrash,
+          highlights: [],
+          highlightsCount: count,
+          highlightsStorage: 'indexeddb-v6',
+        });
+      state = next;
+      if (window.yuejiPersistExternalState) await window.yuejiPersistExternalState(state);
+      const nextRaw = JSON.stringify(compactStateFor(next, count));
+      localStorage.setItem(
+        HIGHLIGHTS_PENDING,
+        JSON.stringify({ phase: 'preparing', count, trashCount, nextRaw, createdAt: Date.now() }),
+      );
+      await replaceHighlightsDb(rows, trashRecords);
+      sessionDateIndex = null;
+      localStorage.setItem(STORAGE, nextRaw);
+      localStorage.removeItem(HIGHLIGHTS_PENDING);
+    } else {
+      state = incoming;
+      if (window.yuejiPersistExternalState) await window.yuejiPersistExternalState(state);
+      save();
+    }
+    if (demoMode) localStorage.setItem(DEMO_OPTIN, '1');
+    else localStorage.removeItem(DEMO_OPTIN);
+    return true;
+  } catch (error) {
+    state = before;
+    sessionDateIndex = null;
+    try {
+      const pending = JSON.parse(localStorage.getItem(HIGHLIGHTS_PENDING));
+      if (pending?.phase !== 'staged') localStorage.removeItem(HIGHLIGHTS_PENDING);
+    } catch {
+      localStorage.removeItem(HIGHLIGHTS_PENDING);
+    }
+    throw error;
+  }
+}
+$('importBackup').onchange = async (e) => {
+  const f = e.target.files[0],
+    operation = 'import-backup';
+  if (!f) return;
+  if (!beginArchiveOperation(operation)) {
+    e.target.value = '';
+    return;
+  }
+  try {
+    if (window.yuejiHighlightsReady) await window.yuejiHighlightsReady;
+    const text = await f.text(),
+      parse = window.yuejiParseJsonText || JSON.parse;
+    await replaceArchiveData(await parse(text), false);
+    await requestPersistentStorage();
+    renderAll();
+    toast('网页备份已导入');
+  } catch (err) {
+    renderAll();
+    toast('这个 JSON 无法读取或保存');
+  } finally {
+    e.target.value = '';
+    endArchiveOperation(operation);
+  }
+};
+$('loadDemo').onclick = async () => {
+  if (!confirm('恢复演示数据会覆盖当前网页记录，继续吗？')) return;
+  try {
+    if (window.yuejiHighlightsReady) await window.yuejiHighlightsReady;
+    await replaceArchiveData(clone(demo), true);
+    renderAll();
+    toast('已恢复演示数据');
+  } catch (error) {
+    renderAll();
+    toast('恢复演示数据失败，原有数据没有变化');
+  }
+};
+function cleanTitle(v) {
+  return (
+    String(v || '')
+      .replace(/\\/g, '/')
+      .split('/')
+      .pop()
+      .replace(/\.(epub|mobi|azw3?|pdf|txt|cbz|cbr)$/i, '')
+      .trim() || '未命名书籍'
+  );
+}
+function pickCol(cols, tests) {
+  return cols.find((c) => tests.some((t) => t.test(c.toLowerCase())));
+}
+async function parseSqlite(bytes) {
+  const SQL = await initSqlJs();
+  const db = new SQL.Database(new Uint8Array(bytes));
+  const tables =
+    db.exec("SELECT name FROM sqlite_master WHERE type='table'")[0]?.values.flat() || [];
+  let books = [],
+    sessions = [];
+  for (const tn of tables) {
+    let info;
+    try {
+      info = db.exec(`PRAGMA table_info(\"${String(tn).replace(/"/g, '""')}\")`)[0];
+    } catch (e) {
+      continue;
+    }
+    if (!info) continue;
+    const cols = info.values.map((r) => String(r[1])),
+      title = pickCol(cols, [/book.*name/, /^name$/, /^title$/, /filename/]),
+      date = pickCol(cols, [/^date$/, /read.*date/, /time/, /day/]),
+      mins = pickCol(cols, [/minute/, /duration/, /read.*time/]),
+      words = pickCol(cols, [/word/, /char/]),
+      progress = pickCol(cols, [/progress/, /percent/]),
+      author = pickCol(cols, [/author/]);
+    if (title) {
+      let rows;
+      try {
+        rows = db.exec(`SELECT * FROM \"${String(tn).replace(/"/g, '""')}\" LIMIT 5000`)[0];
+      } catch (e) {
+        continue;
+      }
+      if (!rows) continue;
+      const idx = Object.fromEntries(rows.columns.map((c, i) => [c, i]));
+      for (const r of rows.values) {
+        const raw = r[idx[title]];
+        if (raw == null) continue;
+        let dval = date ? r[idx[date]] : null,
+          dk = '';
+        if (dval) {
+          if (typeof dval === 'number') {
+            const ms = dval > 1e12 ? dval : dval > 1e9 ? dval * 1000 : null;
+            if (ms) dk = dateKey(new Date(ms));
+          } else {
+            const m = String(dval).match(/(20\d{2})[-\/]?(\d{1,2})[-\/]?(\d{1,2})/);
+            if (m) dk = `${m[1]}-${pad(m[2])}-${pad(m[3])}`;
+          }
+        }
+        const key =
+          'moon-' +
+          btoa(unescape(encodeURIComponent(String(raw))))
+            .replace(/[^a-z0-9]/gi, '')
+            .slice(0, 24);
+        if (!books.some((b) => b.key === key))
+          books.push({
+            key,
+            title: cleanTitle(raw),
+            file: String(raw),
+            author: author ? String(r[idx[author]] || '') : '',
+            category: '',
+            country: '',
+            birth: '',
+            progress: progress ? Math.min(100, +r[idx[progress]] || 0) : 0,
+            status: 'reading',
+            minutes: 0,
+            words: 0,
+            days: 0,
+            color: palette[books.length % palette.length],
+          });
+        if (dk)
+          sessions.push({
+            date: dk,
+            bookKey: key,
+            minutes: mins ? Math.max(0, +r[idx[mins]] || 0) : 0,
+            words: words ? Math.max(0, +r[idx[words]] || 0) : 0,
+          });
+      }
+    }
+  }
+  db.close();
+  if (!books.length) throw new Error('未找到可识别的书籍表');
+  return { books, sessions };
+}
+async function importMoon(file) {
+  $('importStatus').textContent = '正在本地读取备份……';
+  try {
+    const zip = await JSZip.loadAsync(file),
+      names = Object.keys(zip.files).filter((n) => !zip.files[n].dir),
+      dbName =
+        names.find((n) => /\.(db|sqlite|sqlite3)$/i.test(n)) ||
+        names.find((n) => /database|book|stat/i.test(n)),
+      jsonName = names.find((n) => /\.json$/i.test(n));
+    let data;
+    if (dbName) data = await parseSqlite(await zip.file(dbName).async('arraybuffer'));
+    else if (jsonName) {
+      const obj = JSON.parse(await zip.file(jsonName).async('text'));
+      data = { books: obj.books || [], sessions: obj.sessions || [] };
+    } else throw new Error('备份中没有找到可读取的数据库');
+    if (!data.books.length) throw new Error('没有识别到书籍');
+    const byKey = {};
+    data.sessions.forEach((s) => {
+      if (!byKey[s.bookKey]) byKey[s.bookKey] = [];
+      byKey[s.bookKey].push(s);
+    });
+    data.books.forEach((b) => {
+      const ss = byKey[b.key] || [];
+      b.minutes = ss.reduce((a, s) => a + (+s.minutes || 0), 0);
+      b.words = ss.reduce((a, s) => a + (+s.words || 0), 0);
+      b.days = new Set(ss.map((s) => s.date)).size;
+    });
+    state.books = data.books;
+    state.sessions = data.sessions;
+    state.source = '静读天下';
+    state.importedAt = new Date().toISOString();
+    save();
+    renderAll();
+    $('importStatus').textContent =
+      `已识别 ${data.books.length} 本书、${new Set(data.sessions.map((s) => s.date)).size} 个阅读日。`;
+    toast('静读天下备份已导入');
+  } catch (err) {
+    $('importStatus').textContent = `没有成功解析：${err.message}。你的备份不会被上传或改动。`;
+    toast('导入失败');
+  }
+}
+function moonKey(v) {
+  let h = 2166136261;
+  for (const c of String(v || '').toLowerCase()) {
+    h ^= c.codePointAt(0);
+    h = Math.imul(h, 16777619);
+  }
+  return 'moon-' + (h >>> 0).toString(36);
+}
+function sqlRows(db, sql) {
+  const out = db.exec(sql)[0];
+  if (!out) return [];
+  return out.values.map((r) => Object.fromEntries(out.columns.map((c, i) => [c, r[i]])));
+}
+const yieldToBrowser = () => new Promise((resolve) => setTimeout(resolve, 0));
+async function eachSqlRow(db, sql, visit, batchSize = 300) {
+  const stmt = db.prepare(sql);
+  let count = 0;
+  try {
+    while (stmt.step()) {
+      visit(stmt.getAsObject());
+      count++;
+      if (count % batchSize === 0) await yieldToBrowser();
+    }
+  } finally {
+    stmt.free();
+  }
+  return count;
+}
+function moonDate(ms) {
+  const d = new Date(+ms || 0);
+  return Number.isNaN(d.getTime()) || d.getFullYear() < 2000 ? todayKey : dateKey(d);
+}
+function dayNumberDate(n) {
+  const d = new Date(+n * 86400000);
+  return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
+}
+async function parseMoonDatabase(bytes, onProgress = () => {}) {
+  const SQL = await initSqlJs(),
+    db = new SQL.Database(new Uint8Array(bytes));
+  try {
+    const tables = new Set(
+      sqlRows(db, "SELECT name FROM sqlite_master WHERE type='table'").map((x) => x.name),
+    );
+    if (!tables.has('books') || !tables.has('notes'))
+      throw new Error('没有找到静读天下书目和书摘表');
+    const books = [],
+      bookByKey = new Map(),
+      aliases = new Map(),
+      highlights = [],
+      combined = new Map(),
+      bookStats = new Map();
+    function addBook(title, filename, author = '', category = '') {
+      const identity = String(filename || title || '').toLowerCase(),
+        key = moonKey(identity),
+        found = bookByKey.get(key);
+      if (found) return found;
+      const b = {
+        key,
+        title: String(title || cleanTitle(filename)),
+        file: String(filename || ''),
+        author: String(author || ''),
+        category: String(category || ''),
+        progress: 0,
+        status: 'unread',
+        minutes: 0,
+        words: 0,
+        days: 0,
+        color: palette[books.length % palette.length],
+      };
+      books.push(b);
+      bookByKey.set(key, b);
+      [filename, title].filter(Boolean).forEach((x) => aliases.set(String(x).toLowerCase(), b));
+      return b;
+    }
+    function resolve(title, filename) {
+      return (
+        aliases.get(String(filename || '').toLowerCase()) ||
+        aliases.get(String(title || '').toLowerCase()) ||
+        addBook(title, filename)
+      );
+    }
+    onProgress('正在读取书目……');
+    await eachSqlRow(db, 'SELECT * FROM books', (r) =>
+      addBook(r.book, r.filename, r.author, r.category),
+    );
+    onProgress('正在分批读取书摘……');
+    await eachSqlRow(db, 'SELECT * FROM notes', (r) => {
+      const quote = String(r.original || ''),
+        note = String(r.note || '');
+      if (!quote.trim() && !note.trim()) return;
+      const b = resolve(r.book, r.filename),
+        time = +r.time || 0;
+      highlights.push({
+        id: `moon-note-${r._id}-${moonKey(r.filename)}`,
+        bookKey: b.key,
+        date: moonDate(time),
+        time,
+        quote,
+        note,
+        bookmark: String(r.bookmark || ''),
+        color: r.highlightColor,
+        underline: !!r.underline,
+        strikethrough: !!r.strikethrough,
+      });
+    });
+    if (tables.has('statistics')) {
+      onProgress('正在分批整理阅读记录……');
+      await eachSqlRow(db, 'SELECT * FROM statistics', (r) => {
+        const b = resolve('', r.filename);
+        for (const line of String(r.dates || '').split(/\r?\n/)) {
+          const m = line.match(/^(\d+)\|(\d+)@(\d+)/);
+          if (!m) continue;
+          const date = dayNumberDate(m[1]);
+          if (!date) continue;
+          const k = `${date}|${b.key}`,
+            old = combined.get(k) || { date, bookKey: b.key, minutes: 0, words: 0, source: 'moon' };
+          old.minutes += Math.round(+m[2] / 60000);
+          old.words += +m[3] || 0;
+          combined.set(k, old);
+        }
+      });
+    }
+    const sessions = [...combined.values()];
+    sessions.forEach((s) => {
+      let x = bookStats.get(s.bookKey);
+      if (!x) {
+        x = { minutes: 0, words: 0, dates: new Set() };
+        bookStats.set(s.bookKey, x);
+      }
+      x.minutes += s.minutes;
+      x.words += s.words;
+      x.dates.add(s.date);
+    });
+    books.forEach((b) => {
+      const x = bookStats.get(b.key);
+      if (!x) return;
+      b.minutes = x.minutes;
+      b.words = x.words;
+      b.days = x.dates.size;
+      b.status = 'reading';
+    });
+    return { books, sessions, highlights };
+  } finally {
+    db.close();
+  }
+}
+async function databaseFromBackup(file) {
+  const zip = await JSZip.loadAsync(file),
+    names = Object.keys(zip.files).filter((n) => !zip.files[n].dir);
+  let dbName =
+    names.find((n) => /(^|\/)mrbooks\.db$/i.test(n)) ||
+    names.find((n) => /\.(db|sqlite|sqlite3)$/i.test(n));
+  if (!dbName) {
+    const manifest = names.find((n) => /(^|\/)_names\.list$/i.test(n));
+    if (manifest) {
+      const lines = (await zip.file(manifest).async('text')).replace(/^\uFEFF/, '').split(/\r?\n/),
+        index = lines.findIndex((n) => /(^|\/)mrbooks\.db(?:$|\?)/i.test(n));
+      if (index >= 0) {
+        const dir = manifest.slice(0, manifest.lastIndexOf('/') + 1),
+          tag = `${dir}${index + 1}.tag`;
+        if (zip.file(tag)) dbName = tag;
+      }
+    }
+  }
+  if (!dbName) throw new Error('备份中没有找到 mrbooks.db');
+  return zip.file(dbName).async('arraybuffer');
+}
+let pendingMoonImport = null;
+async function importMoonV2(file) {
+  $('importStatus').textContent = '正在本地读取备份……';
+  $('importPreview').hidden = true;
+  pendingMoonImport = null;
+  try {
+    const data = await parseMoonDatabase(await databaseFromBackup(file));
+    pendingMoonImport = data;
+    const days = new Set(data.sessions.map((s) => s.date)).size,
+      comments = data.highlights.filter((h) => h.note.trim()).length;
+    $('importPreviewText').innerHTML =
+      `<b>已经读取完成，尚未写入网页</b><div class="preview-grid"><span><strong>${data.books.length}</strong> 本书</span><span><strong>${data.highlights.length}</strong> 条书摘</span><span><strong>${comments}</strong> 条批注</span><span><strong>${days}</strong> 个阅读日</span></div><p>确认后会与现有记录合并；重复导入不会重复添加同一条书摘。</p>`;
+    $('importStatus').textContent = `文件：${file.name} · 全程在当前浏览器内解析。`;
+    $('importPreview').hidden = false;
+  } catch (err) {
+    $('importStatus').textContent = `没有成功解析：${err.message}。现有数据没有变化。`;
+    toast('导入失败');
+  }
+}
+function mergeMoon(data) {
+  const base =
+      state.source === '演示数据'
+        ? { ...state, books: [], sessions: [], journals: {}, highlights: [] }
+        : state,
+    bookMap = new Map(base.books.map((b) => [b.key, b]));
+  data.books.forEach((b) => {
+    const old = bookMap.get(b.key);
+    bookMap.set(
+      b.key,
+      old
+        ? {
+            ...b,
+            ...old,
+            file: old.file || b.file,
+            author: old.author || b.author,
+            category: old.category || b.category,
+            minutes: b.minutes,
+            words: b.words,
+            days: b.days,
+            status: +old.progress > 0 ? old.status : b.status,
+          }
+        : b,
+    );
+  });
+  const sessions = new Map(base.sessions.map((s) => [`${s.date}|${s.bookKey}`, s]));
+  data.sessions.forEach((s) => sessions.set(`${s.date}|${s.bookKey}`, s));
+  const highlights = new Map((base.highlights || []).map((h) => [h.id, h]));
+  data.highlights.forEach((h) => highlights.set(h.id, h));
+  state = normalize({
+    ...base,
+    books: [...bookMap.values()],
+    sessions: [...sessions.values()],
+    highlights: [...highlights.values()],
+    source: '静读天下',
+    importedAt: new Date().toISOString(),
+  });
+  save();
+  renderAll();
+}
+$('cancelMoonImport').onclick = () => {
+  if (pendingMoonImport) pendingMoonImport.zip = null;
+  pendingMoonImport = null;
+  $('importPreview').hidden = true;
+  $('mrproFile').value = '';
+  $('importStatus').textContent = '已取消，网页数据没有变化。';
+};
+const COVER_DB = 'yueji-covers-v1';
+function canonicalFile(v) {
+  return String(v || '')
+    .replace(/\\/g, '/')
+    .split('/')
+    .pop()
+    .toLowerCase();
+}
+function coverDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(COVER_DB, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('covers');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+function countDbStore(openDb, storeName) {
+  return openDb().then(async (db) => {
+    try {
+      return await new Promise((resolve, reject) => {
+        const req = db.transaction(storeName).objectStore(storeName).count();
+        req.onsuccess = () => resolve(req.result || 0);
+        req.onerror = () => reject(req.error);
+      });
+    } finally {
+      db.close();
+    }
+  });
+}
+async function highlightTrashStats() {
+  const db = await highlightDb();
+  try {
+    return await new Promise((resolve, reject) => {
+      const req = db
+          .transaction(HIGHLIGHTS_TRASH_ROW_STORE)
+          .objectStore(HIGHLIGHTS_TRASH_ROW_STORE)
+          .openCursor(),
+        books = new Set();
+      let highlights = 0;
+      req.onsuccess = () => {
+        const c = req.result;
+        if (!c) return resolve({ books: books.size, highlights });
+        books.add(String(c.value?.bookKey || ''));
+        highlights++;
+        c.continue();
+      };
+      req.onerror = () => reject(req.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+function formatBytes(bytes) {
+  const n = Number(bytes) || 0;
+  if (n < 1024) return `${n} B`;
+  if (n < 1048576) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1073741824) return `${(n / 1048576).toFixed(1)} MB`;
+  return `${(n / 1073741824).toFixed(2)} GB`;
+}
+function localStorageBytes() {
+  let n = 0;
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i) || '',
+      v = localStorage.getItem(k) || '';
+    n += (k.length + v.length) * 2;
+  }
+  return n;
+}
+async function persistentStorageStatus() {
+  if (!navigator.storage?.persisted) return { supported: false, persisted: false };
+  try {
+    return { supported: true, persisted: Boolean(await navigator.storage.persisted()) };
+  } catch {
+    return { supported: true, persisted: false };
+  }
+}
+async function requestPersistentStorage() {
+  const current = await persistentStorageStatus();
+  if (!current.supported || current.persisted || !navigator.storage?.persist) return current;
+  try {
+    return { supported: true, persisted: Boolean(await navigator.storage.persist()) };
+  } catch {
+    return current;
+  }
+}
+window.yuejiRequestPersistentStorage = requestPersistentStorage;
+window.yuejiPersistentStorageStatus = persistentStorageStatus;
+let diagnosticText = '';
+async function buildDiagnostics() {
+  if (window.yuejiHighlightsReady) await window.yuejiHighlightsReady;
+  const memory = highlightCount(state.highlights),
+    expected = highlightsDbReady ? highlightsCountCache : Number(state.highlightsCount) || memory,
+    pending = Boolean(localStorage.getItem(HIGHLIGHTS_PENDING)),
+    lines = [
+      `检查时间：${new Date().toLocaleString('zh-CN')}`,
+      `书籍：${state.books.length} 本`,
+      `阅读记录：${state.sessions.length} 条`,
+      `阅读手记：${Object.keys(state.journals || {}).length} 条`,
+      `内存常驻书摘：${memory} 条`,
+    ];
+  let level = 'ok';
+  try {
+    const stored = await countDbStore(highlightDb, HIGHLIGHTS_STORE),
+      staged = await countDbStore(highlightDb, HIGHLIGHTS_STAGE_STORE),
+      trashStaged = await countDbStore(highlightDb, HIGHLIGHTS_TRASH_STAGE_STORE),
+      trash = await highlightTrashStats();
+    lines.push(
+      `IndexedDB 书摘：${stored} 条`,
+      `书摘暂存区：${staged} 条`,
+      `回收区暂存：${trashStaged} 条`,
+      `未完成替换标记：${pending ? '有' : '无'}`,
+      `回收区：${trash.books} 本书 / ${trash.highlights} 条书摘`,
+    );
+    if (!highlightsDbReady) {
+      level = 'error';
+      lines.push('书摘数据库状态：不可用，当前保留旧储存');
+    } else if (stored !== expected) {
+      level = 'warn';
+      lines.push(`书摘数据库状态：数量不一致（相差 ${Math.abs(stored - expected)} 条）`);
+    } else if (pending) {
+      level = 'warn';
+      lines.push('书摘数据库状态：存在尚未完成的数据替换');
+    } else if (staged > 0 || trashStaged > 0) {
+      level = 'warn';
+      lines.push('书摘数据库状态：暂存区存在中断后残留，重新打开网页时会安全回退');
+    } else if (memory > 0) {
+      level = 'warn';
+      lines.push('书摘内存状态：仍有待迁移记录');
+    } else lines.push('书摘数据库状态：正常，按需读取');
+  } catch (error) {
+    level = 'error';
+    lines.push(`书摘数据库状态：读取失败（${error?.message || '未知错误'}）`);
+  }
+  try {
+    lines.push(`封面数据库：${await countDbStore(coverDb, 'covers')} 张`);
+  } catch (error) {
+    level = level === 'ok' ? 'warn' : level;
+    lines.push('封面数据库：暂时无法读取');
+  }
+  lines.push(`localStorage 占用：约 ${formatBytes(localStorageBytes())}`);
+  const persistence = await persistentStorageStatus();
+  lines.push(
+    `持久存储：${!persistence.supported ? '浏览器不支持' : persistence.persisted ? '已启用' : '未启用（浏览器仍可能自动清理网站数据）'}`,
+  );
+  try {
+    const estimate = await navigator.storage?.estimate?.();
+    if (estimate) {
+      lines.push(`当前网站总储存：约 ${formatBytes(estimate.usage)}`);
+      if (estimate.quota) lines.push(`浏览器可用配额：约 ${formatBytes(estimate.quota)}`);
+    }
+  } catch {}
+  lines.push(
+    level === 'ok'
+      ? '结论：本地数据正常，书摘不会全部常驻内存。'
+      : level === 'warn'
+        ? '结论：发现需要注意的项目，请先导出备份。'
+        : '结论：数据库不可用或读取失败，请勿清理网站数据。',
+  );
+  return { level, text: lines.join('\n') };
+}
+async function runDiagnostics() {
+  const out = $('diagnosticResult'),
+    btn = $('runDiagnostics');
+  btn.disabled = true;
+  out.className = 'diagnostic-result';
+  out.textContent = '正在检查本地数据……';
+  try {
+    const result = await buildDiagnostics();
+    diagnosticText = result.text;
+    out.className = `diagnostic-result ${result.level}`;
+    out.textContent = result.text;
+    $('copyDiagnostics').disabled = false;
+  } catch (error) {
+    diagnosticText = '';
+    out.className = 'diagnostic-result error';
+    out.textContent = `检查没有完成：${error?.message || '未知错误'}\n现有数据没有被修改。`;
+    $('copyDiagnostics').disabled = true;
+  } finally {
+    btn.disabled = false;
+  }
+}
+async function copyDiagnostics() {
+  if (!diagnosticText) return;
+  try {
+    await navigator.clipboard.writeText(diagnosticText);
+    toast('诊断信息已复制');
+  } catch {
+    const t = document.createElement('textarea');
+    t.value = diagnosticText;
+    document.body.append(t);
+    t.select();
+    document.execCommand('copy');
+    t.remove();
+    toast('诊断信息已复制');
+  }
+}
+async function protectLocalData() {
+  const btn = $('requestPersistentStorage');
+  btn.disabled = true;
+  try {
+    const result = await requestPersistentStorage();
+    if (!result.supported) toast('当前浏览器不支持持久存储');
+    else if (result.persisted) toast('本地数据保护已启用');
+    else toast('浏览器暂未授予保护权限');
+    await runDiagnostics();
+  } finally {
+    btn.disabled = false;
+  }
+}
+function openStressDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('yueji-diagnostic-stress-v1', 2);
+    req.onupgradeneeded = () => {
+      const db = req.result,
+        store = db.objectStoreNames.contains('rows')
+          ? req.transaction.objectStore('rows')
+          : db.createObjectStore('rows', { keyPath: 'id' });
+      if (!store.indexNames.contains('sortTime')) store.createIndex('sortTime', 'sortTime');
+      if (!store.indexNames.contains('bookSort'))
+        store.createIndex('bookSort', ['bookKey', 'sortTime']);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+function stressBatch(db, start, count) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('rows', 'readwrite'),
+      store = tx.objectStore('rows');
+    for (let i = start; i < start + count; i++)
+      store.put({
+        id: `test-${i}`,
+        bookKey: `book-${i % 57}`,
+        date: `2026-${pad((i % 12) + 1)}-${pad((i % 28) + 1)}`,
+        sortTime: i,
+        quote: `本地压力测试书摘 ${i} ` + '阅迹'.repeat(40),
+        note: i % 3 ? '' : '模拟感想',
+        searchText: `本地压力测试书摘 ${i} 阅迹`,
+      });
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error('测试写入中止'));
+  });
+}
+function stressReadBook(db, bookKey, limit = 80) {
+  return new Promise((resolve, reject) => {
+    const rows = [],
+      source = db.transaction('rows').objectStore('rows').index('bookSort'),
+      range = IDBKeyRange.bound([bookKey, 0], [bookKey, Number.MAX_SAFE_INTEGER]),
+      req = source.openCursor(range, 'prev');
+    req.onsuccess = () => {
+      const c = req.result;
+      if (!c || rows.length >= limit) return resolve(rows);
+      rows.push(c.value);
+      c.continue();
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+async function runStorageStress() {
+  const btn = $('runStorageStress'),
+    out = $('diagnosticResult'),
+    sizes = [100, 1000, 5000, 10000];
+  btn.disabled = true;
+  out.className = 'diagnostic-result';
+  out.textContent = '正在运行独立数据库压力测试……';
+  let db = null;
+  const lines = ['压力测试不会读取或修改真实数据。'];
+  try {
+    db = await openStressDb();
+    for (const size of sizes) {
+      const start = performance.now();
+      for (let i = 0; i < size; i += 250) {
+        await stressBatch(db, i, Math.min(250, size - i));
+        await new Promise(requestAnimationFrame);
+      }
+      const count = await new Promise((resolve, reject) => {
+          const req = db.transaction('rows').objectStore('rows').count();
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        }),
+        readStart = performance.now(),
+        sample = await stressReadBook(db, 'book-7', 80);
+      if (size >= 1000 && !sample.length) throw new Error('按书索引没有返回测试数据');
+      lines.push(
+        `${size.toLocaleString()} 条：写入并校验 ${count.toLocaleString()} 条，用时 ${Math.round(performance.now() - start)} ms；单书分页读取 ${sample.length} 条，用时 ${Math.round(performance.now() - readStart)} ms`,
+      );
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction('rows', 'readwrite');
+        tx.objectStore('rows').clear();
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+    lines.push('结论：分批写入与按书分页读取测试完成，临时数据已删除。');
+    out.className = 'diagnostic-result ok';
+  } catch (error) {
+    lines.push(`测试中止：${error?.message || '未知错误'}`, '真实阅读数据没有受到影响。');
+    out.className = 'diagnostic-result error';
+  } finally {
+    if (db) db.close();
+    indexedDB.deleteDatabase('yueji-diagnostic-stress-v1');
+    out.textContent = lines.join('\n');
+    btn.disabled = false;
+  }
+}
+$('runDiagnostics').onclick = runDiagnostics;
+$('requestPersistentStorage').onclick = protectLocalData;
+$('copyDiagnostics').onclick = copyDiagnostics;
+$('runStorageStress').onclick = runStorageStress;
+async function putCovers(items) {
+  if (!items?.length) return;
+  const db = await coverDb();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction('covers', 'readwrite'),
+      store = tx.objectStore('covers');
+    items.forEach((x) => store.put(x.blob, x.bookKey));
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+}
+async function getCover(key) {
+  const db = await coverDb(),
+    blob = await new Promise((resolve, reject) => {
+      const req = db.transaction('covers').objectStore('covers').get(key);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  db.close();
+  return blob;
+}
+async function getCovers(keys) {
+  const unique = [...new Set((keys || []).filter(Boolean))];
+  if (!unique.length) return new Map();
+  const db = await coverDb();
+  try {
+    const store = db.transaction('covers').objectStore('covers'),
+      rows = await Promise.all(
+        unique.map(
+          (key) =>
+            new Promise((resolve, reject) => {
+              const req = store.get(key);
+              req.onsuccess = () => resolve([key, req.result]);
+              req.onerror = () => reject(req.error);
+            }),
+        ),
+      );
+    return new Map(rows);
+  } finally {
+    db.close();
+  }
+}
+async function deleteCover(key) {
+  const db = await coverDb();
+  try {
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('covers', 'readwrite');
+      tx.objectStore('covers').delete(key);
+      tx.objectStore('covers').delete(`__yueji_source_cover__:${key}`);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+window.yuejiDeleteCover = deleteCover;
+async function compactRemoteCover(blob) {
+  if (!(blob instanceof Blob) || !blob.type.startsWith('image/')) throw new Error('INVALID_COVER');
+  const bmp = await createImageBitmap(blob),
+    scale = Math.min(1, 480 / bmp.width, 720 / bmp.height),
+    w = Math.max(1, Math.round(bmp.width * scale)),
+    h = Math.max(1, Math.round(bmp.height * scale)),
+    canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  canvas.getContext('2d').drawImage(bmp, 0, 0, w, h);
+  bmp.close?.();
+  const out = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', 0.82));
+  canvas.width = 1;
+  canvas.height = 1;
+  return out || blob;
+}
+const coverFetchQueue = [],
+  coverFetchPending = new Set(),
+  coverFetchFailures = new Map();
+let coverFetchRunning = false;
+async function runCoverFetchQueue() {
+  if (coverFetchRunning) return;
+  coverFetchRunning = true;
+  while (coverFetchQueue.length) {
+    const item = coverFetchQueue.shift();
+    try {
+      const response = await fetch(item.url, {
+        mode: 'cors',
+        referrerPolicy: 'no-referrer',
+        credentials: 'omit',
+      });
+      if (!response.ok) throw new Error(`HTTP_${response.status}`);
+      const raw = await response.blob();
+      if (raw.size > 8 * 1024 * 1024) throw new Error('COVER_TOO_LARGE');
+      const blob = await compactRemoteCover(raw);
+      await putCovers([{ bookKey: item.key, blob }]);
+      coverFetchFailures.delete(item.key);
+      if (item.img?.isConnected) {
+        const local = URL.createObjectURL(blob),
+          release = () => URL.revokeObjectURL(local);
+        item.img.addEventListener('load', release, { once: true });
+        item.img.addEventListener('error', release, { once: true });
+        item.img.src = local;
+        item.img
+          .closest('.cover-art,.layout-cover-art,.home-recent-cover,.month-book-cover')
+          ?.classList.add('has-image');
+      }
+    } catch (error) {
+      coverFetchFailures.set(item.key, { at: Date.now(), reason: String(error?.message || error) });
+      console.warn('来源封面缓存失败', item.key, error?.message || error);
+    } finally {
+      coverFetchPending.delete(item.key);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 120));
+  }
+  coverFetchRunning = false;
+}
+function queueRemoteCover(img) {
+  const key = img.dataset.coverKey,
+    b = book(key),
+    url = b?.weReadCover || b?.cover,
+    failed = coverFetchFailures.get(key);
+  if (
+    !key ||
+    !url ||
+    b?.manualCover ||
+    coverFetchPending.has(key) ||
+    (failed && Date.now() - failed.at < 6 * 60 * 60 * 1000)
+  )
+    return;
+  coverFetchPending.add(key);
+  coverFetchQueue.push({ key, url, img });
+  runCoverFetchQueue();
+}
+window.yuejiCoverFetchStatus = () => ({
+  queued: coverFetchQueue.length,
+  pending: coverFetchPending.size,
+  failed: [...coverFetchFailures.entries()].map(([key, value]) => ({ key, ...value })),
+});
+function blobDataUrlForBackup(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+async function readCoverArchive() {
+  const db = await coverDb();
+  try {
+    const rows = await new Promise((resolve, reject) => {
+        const out = [],
+          req = db.transaction('covers').objectStore('covers').openCursor();
+        req.onsuccess = () => {
+          const c = req.result;
+          if (!c) return resolve(out);
+          out.push([String(c.key), c.value]);
+          c.continue();
+        };
+        req.onerror = () => reject(req.error);
+      }),
+      out = [];
+    for (let i = 0; i < rows.length; i++) {
+      const [bookKey, blob] = rows[i];
+      if (blob instanceof Blob) out.push({ bookKey, data: await blobDataUrlForBackup(blob) });
+      if (i && i % 10 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    return out;
+  } finally {
+    db.close();
+  }
+}
+async function restoreCoverArchive(rows) {
+  const covers = [];
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row?.bookKey || !/^data:image\//i.test(row.data || '')) continue;
+    const blob = await fetch(row.data).then((r) => r.blob());
+    covers.push({ bookKey: String(row.bookKey), blob });
+    if (covers.length >= 20) {
+      await putCovers(covers.splice(0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+  if (covers.length) await putCovers(covers);
+}
+async function buildPortableBackup() {
+  const highlights = highlightsDbReady ? await readHighlightsDb() : [...(state.highlights || [])],
+    trashRows = highlightsDbReady ? await readHighlightTrashDb() : [],
+    trashMap = new Map(trashRows.map((x) => [x.bookKey, x.items || []])),
+    bookTrash = (state.bookTrash || []).map((item) => ({
+      ...item,
+      highlights: trashMap.get(item.book?.key) || item.highlights || [],
+      highlightsInDb: false,
+    })),
+    localCovers = await readCoverArchive();
+  return {
+    ...state,
+    bookTrash,
+    highlights,
+    highlightsStorage: 'portable-json',
+    backupVersion: 2,
+    localCovers,
+  };
+}
+async function hydrateCovers(root = document) {
+  const imgs = [...root.querySelectorAll('img[data-cover-key]')];
+  if (!imgs.length) return;
+  try {
+    const covers = await getCovers(imgs.map((img) => img.dataset.coverKey));
+    for (const img of imgs) {
+      const blob = covers.get(img.dataset.coverKey);
+      if (blob) {
+        const url = URL.createObjectURL(blob),
+          release = () => URL.revokeObjectURL(url);
+        img.addEventListener('load', release, { once: true });
+        img.addEventListener('error', release, { once: true });
+        img.src = url;
+        img
+          .closest('.cover-art,.layout-cover-art,.home-recent-cover,.month-book-cover')
+          ?.classList.add('has-image');
+        continue;
+      }
+      if ('IntersectionObserver' in window) {
+        const observer = new IntersectionObserver(
+          (entries) => {
+            if (entries.some((x) => x.isIntersecting)) {
+              observer.disconnect();
+              queueRemoteCover(img);
+            }
+          },
+          { rootMargin: '240px' },
+        );
+        observer.observe(img);
+      } else queueRemoteCover(img);
+    }
+  } catch (error) {
+    console.warn('封面批量读取失败', error);
+  }
+}
+function sourceLabel(b) {
+  const sources = new Set(b.sources || []),
+    labels = [];
+  if (sources.has('weread')) labels.push('微信读书');
+  if (sources.has('moon')) labels.push('静读天下');
+  if (sources.has('manual')) labels.push('手动');
+  return labels.join(' + ') || '本地';
+}
+function renderLibrary() {
+  const q = $('bookSearch').value.trim().toLowerCase();
+  const visible = state.books.filter((b) => !b.hidden),
+    arr = visible.filter(
+      (b) =>
+        (libraryFilter === 'all' || statusOf(b) === libraryFilter) &&
+        `${b.title} ${b.file || ''} ${b.author || ''}`.toLowerCase().includes(q),
+    );
+  $('libraryCount').textContent = visible.length;
+  $('bookshelf').innerHTML = arr.length
+    ? arr
+        .map(
+          (b, i) =>
+            `<button class="cover-card" data-book="${esc(b.key)}"><span class="cover-art" style="--cover:${b.visualColor || b.color || palette[i % palette.length]}"><img data-cover-key="${esc(b.key)}" alt="" loading="lazy"><i>${esc(b.title)}</i><em>${Math.round(+b.progress || 0)}%</em></span><span class="cover-info"><b>${esc(b.title)}</b><small>${esc(b.author || '作者待补充')}</small><small class="book-source">${esc(sourceLabel(b))}</small><span class="book-progress"><i style="width:${Math.min(100, +b.progress || 0)}%"></i></span></span></button>`,
+        )
+        .join('')
+    : '<div class="empty-text">这里还没有书。导入静读天下备份后，书架会自动出现。</div>';
+  $('bookTable').innerHTML = '';
+  document
+    .querySelectorAll('.cover-card[data-book]')
+    .forEach((x) => (x.onclick = () => openBook(x.dataset.book)));
+  hydrateCovers($('bookshelf'));
+}
+let noteKind = 'all',
+  noteRenderLimit = 80,
+  noteSearchTimer = 0,
+  noteSearchVersion = 0,
+  renderNotes;
+async function renderNotesPaged() {
+  const version = ++noteSearchVersion,
+    q = $('noteSearch').value.trim().toLowerCase(),
+    selected = $('noteBookFilter').value,
+    items = [];
+  Object.values(state.journals).forEach((j) =>
+    items.push({
+      id: `journal-${j.date}`,
+      bookKey: j.bookKey || '',
+      date: j.date,
+      time: parseDate(j.date).getTime(),
+      quote: j.quote || '',
+      thought: j.thought || '',
+      label: j.what || '',
+      type: 'journal',
+    }),
+  );
+  try {
+    if (window.yuejiHighlightsReady) await window.yuejiHighlightsReady;
+    const result = highlightsDbReady
+      ? await queryHighlightsDb({
+          bookKey: selected,
+          query: q,
+          kind: noteKind,
+          limit: noteRenderLimit + 1,
+        })
+      : { rows: [...(state.highlights || [])], hasMore: false };
+    if (version !== noteSearchVersion || page !== 'notes') return;
+    result.rows.slice(0, noteRenderLimit).forEach((h) =>
+      items.push({
+        id: h.id,
+        bookKey: h.bookKey || '',
+        date: h.date,
+        time: +h.sortTime || +h.time || parseDate(h.date).getTime(),
+        quote: h.quote || '',
+        thought: h.note || '',
+        label: h.bookmark || '',
+        type: 'highlight',
+      }),
+    );
+    const filtered = items
+        .filter(
+          (n) =>
+            (!selected || n.bookKey === selected) &&
+            (noteKind === 'all' ||
+              (noteKind === 'quotes' && n.quote.trim()) ||
+              (noteKind === 'thoughts' && n.thought.trim())) &&
+            `${n.quote} ${n.thought} ${n.label}`.toLowerCase().includes(q),
+        )
+        .sort((a, b) => b.time - a.time),
+      visible = filtered.slice(0, noteRenderLimit),
+      groups = new Map();
+    visible.forEach((n) => {
+      const k = n.bookKey || '_none';
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(n);
+    });
+    const ordered = [...groups.entries()].sort((a, b) => b[1][0].time - a[1][0].time),
+      more = result.hasMore || filtered.length > visible.length;
+    $('notesList').innerHTML = ordered.length
+      ? ordered
+          .map(([key, notes]) => {
+            const b = book(key);
+            return `<details class="note-book-group" ${q || selected ? 'open' : ''}><summary><span class="note-book-cover cover-art" style="--cover:${b?.color || '#666'}"><img ${b ? `data-cover-key="${esc(b.key)}"` : ''} alt=""><i>${esc(b?.title || '未关联书籍')}</i></span><span><b>${esc(b?.title || '未关联书籍')}</b><small>${notes.length} 条 · ${notes.filter((n) => n.quote.trim()).length} 条摘录 · ${notes.filter((n) => n.thought.trim()).length} 条感想</small></span><em>⌄</em></summary><div class="note-book-entries">${notes.map((n) => `<article class="reading-note ${n.quote && n.thought ? 'mixed-note' : n.quote ? 'quote-note' : 'thought-note'}">${n.label ? `<div class="note-location">${esc(n.label)}</div>` : ''}${n.quote ? `<div class="quote-body"><span>“</span><p>${esc(n.quote)}</p></div>` : ''}${n.thought ? `<div class="thought-body"><span>▤</span><p>${esc(n.thought)}</p></div>` : ''}<time>${fmtDate(n.date)}</time></article>`).join('')}</div></details>`;
+          })
+          .join('') +
+        (more
+          ? '<button class="soft-btn" id="loadMoreNotes" style="width:100%;margin-top:14px">继续加载更多</button>'
+          : '')
+      : '<div class="card empty-text">这里没有符合条件的内容。</div>';
     hydrateCovers($('notesList'));
-    $('loadMoreNotes')?.addEventListener('click',()=>{noteRenderLimit+=80;renderNotesPaged()});
-  }catch(error){if(version===noteSearchVersion)$('notesList').innerHTML='<div class="card empty-text">书摘数据库暂时无法读取，请稍后重试。</div>'}
+    $('loadMoreNotes')?.addEventListener('click', () => {
+      noteRenderLimit += 80;
+      renderNotesPaged();
+    });
+  } catch (error) {
+    if (version === noteSearchVersion)
+      $('notesList').innerHTML =
+        '<div class="card empty-text">书摘数据库暂时无法读取，请稍后重试。</div>';
+  }
 }
-renderNotes=renderNotesPaged;
-function scheduleNoteSearch(){const version=++noteSearchVersion;clearTimeout(noteSearchTimer);noteSearchTimer=setTimeout(()=>{if(version!==noteSearchVersion||page!=='notes')return;noteRenderLimit=80;renderNotes()},260)}
-$('noteSearch').oninput=scheduleNoteSearch;$('noteBookFilter').onchange=()=>{noteSearchVersion++;clearTimeout(noteSearchTimer);noteRenderLimit=80;renderNotes()};
-$('noteKindSeg').onclick=e=>{const b=e.target.closest('[data-kind]');if(!b)return;noteSearchVersion++;clearTimeout(noteSearchTimer);noteKind=b.dataset.kind;noteRenderLimit=80;document.querySelectorAll('#noteKindSeg button').forEach(x=>x.classList.toggle('active',x===b));renderNotes()};
-async function parseMoonBundle(file,onProgress=()=>{}){onProgress('正在打开备份目录……');const zip=await JSZip.loadAsync(file),names=Object.keys(zip.files).filter(n=>!zip.files[n].dir),manifest=names.find(n=>/(^|\/)_names\.list$/i.test(n));let lines=[],dir='';if(manifest){lines=(await zip.file(manifest).async('text')).replace(/^\uFEFF/,'').split(/\r?\n/);dir=manifest.slice(0,manifest.lastIndexOf('/')+1)}const logicalFile=pattern=>{const i=lines.findIndex(n=>pattern.test(n));return i<0?null:zip.file(`${dir}${i+1}.tag`)};let dbFile=names.find(n=>/(^|\/)mrbooks\.db$/i.test(n));dbFile=dbFile?zip.file(dbFile):logicalFile(/(^|\/)mrbooks\.db$/i);if(!dbFile)throw new Error('备份中没有找到 mrbooks.db');onProgress('正在解压阅读数据库……');const dbBytes=await dbFile.async('arraybuffer'),data=await parseMoonDatabase(dbBytes,onProgress),byFile=new Map(data.books.map(b=>[canonicalFile(b.file),b]));const posFile=logicalFile(/(^|\/)positions10\.xml$/i);if(posFile){onProgress('正在整理阅读进度……');const xml=new DOMParser().parseFromString(await posFile.async('text'),'application/xml');for(const el of xml.querySelectorAll('string[name]')){const filename=el.getAttribute('name')||'',m=el.textContent.match(/(\d+(?:\.\d+)?)%/);if(!m||!/\.(epub|mobi|azw3?|pdf|txt|cbz|cbr)$/i.test(filename))continue;let b=byFile.get(canonicalFile(filename));if(!b){b={key:moonKey(filename),title:cleanTitle(filename),file:filename,author:'',category:'',progress:0,status:'unread',minutes:0,words:0,days:0,color:palette[data.books.length%palette.length]};data.books.push(b);byFile.set(canonicalFile(filename),b)}b.progress=Math.max(+b.progress||0,Math.min(100,+m[1]));b.progressSource='moon';b.status=b.progress>=99.95?'done':b.progress>0?'reading':'unread'}}const latestDate=new Map();data.sessions.forEach(s=>{if(s.date>(latestDate.get(s.bookKey)||''))latestDate.set(s.bookKey,s.date)});data.books.forEach(b=>{if(b.progress>=99.95)b.finishedDate=latestDate.get(b.key)||''});const coverRefs=[],covered=new Set();for(let i=0;i<lines.length;i++){const logical=lines[i];if(!/\.moonreader\/.+_\d+\.png$/i.test(logical))continue;const original=logical.replace(/^.*\.MoonReader\//i,'').replace(/_\d+\.png$/i,''),b=byFile.get(canonicalFile(original)),entry=`${dir}${i+1}.tag`;if(b&&zip.file(entry)&&!covered.has(b.key)){b.hasCover=true;covered.add(b.key);coverRefs.push({bookKey:b.key,entry})}}return{...data,coverRefs,zip}}
-async function saveMoonCovers(data,onProgress=()=>{}){const refs=data.coverRefs||[];for(let start=0;start<refs.length;start+=8){const batch=[];for(const ref of refs.slice(start,start+8)){const file=data.zip?.file(ref.entry);if(file)batch.push({bookKey:ref.bookKey,blob:await file.async('blob')})}if(batch.length)await putCovers(batch);onProgress(`正在保存封面 ${Math.min(start+8,refs.length)} / ${refs.length}……`);await yieldToBrowser()}}
-async function importMoonV3(file){$('importStatus').textContent='正在读取备份……';$('importPreview').hidden=true;pendingMoonImport=null;try{const data=await parseMoonBundle(file,message=>$('importStatus').textContent=message);pendingMoonImport=data;const days=new Set(data.sessions.map(s=>s.date)).size,comments=data.highlights.filter(h=>h.note.trim()).length,progress=data.books.filter(b=>b.progress>0).length;$('importPreviewText').innerHTML=`<b>已经读取完成，尚未写入网页</b><div class="preview-grid"><span><strong>${data.books.length}</strong> 本书</span><span><strong>${data.highlights.length}</strong> 条书摘</span><span><strong>${comments}</strong> 条批注</span><span><strong>${progress}</strong> 本有进度</span></div><p>还识别到 ${data.coverRefs.length} 张封面和 ${days} 个阅读日。封面将在确认后分批保存。</p>`;$('importStatus').textContent=`文件：${file.name} · 全程在当前浏览器内解析。`;$('importPreview').hidden=false}catch(err){$('importStatus').textContent=`没有成功解析：${err.message}。现有数据没有变化。`;toast('导入失败')}}
-async function mergeMoonPaged(data){
-  const before=state,isDemo=state.source==='演示数据',base=isDemo?{...state,books:[],sessions:[],journals:{},highlights:[]}:state,bookMap=new Map(base.books.map(b=>[b.key,b]));
-  data.books.forEach(raw=>{const b={...raw,sources:[...new Set([...(raw.sources||[]),'moon'])]},old=bookMap.get(b.key);if(!old){bookMap.set(b.key,b);return}bookMap.set(b.key,{...old,...b,title:old.title||b.title,author:old.author||b.author,category:old.category||b.category,color:old.color||b.color,progress:old.progressSource==='manual'?old.progress:b.progress,progressSource:old.progressSource||'moon',finishedDate:old.finishedDate||b.finishedDate,sources:[...new Set([...(old.sources||[]),...b.sources])]})});
-  const sessions=new Map(base.sessions.map(s=>[`${s.date}|${s.bookKey}`,s]));data.sessions.forEach(s=>sessions.set(`${s.date}|${s.bookKey}`,{...s,source:s.source||'moon'}));
-  try{
-    if(highlightsDbReady){if(isDemo)await replaceHighlightsDb(data.highlights);else await putHighlightsDb(data.highlights)}
-    const fallbackHighlights=new Map((base.highlights||[]).map(h=>[h.id,h]));data.highlights.forEach(h=>fallbackHighlights.set(h.id,{...h,source:h.source||'moon'}));
-    state=normalize({...base,books:[...bookMap.values()],sessions:[...sessions.values()],highlights:highlightsDbReady?[]:[...fallbackHighlights.values()],source:'静读天下',importedAt:new Date().toISOString()});
-    const reconciled=await reconcileCrossSourceBooks();
-    if(reconciled.changed&&typeof window.yuejiPersistMergedWeReadState==='function')try{await window.yuejiPersistMergedWeReadState()}catch(error){console.warn('合并结果暂未写入微信缓存，将在下次同步时重建',error)}
-    save();renderAll();
-  }catch(error){state=before;throw error}
+renderNotes = renderNotesPaged;
+function scheduleNoteSearch() {
+  const version = ++noteSearchVersion;
+  clearTimeout(noteSearchTimer);
+  noteSearchTimer = setTimeout(() => {
+    if (version !== noteSearchVersion || page !== 'notes') return;
+    noteRenderLimit = 80;
+    renderNotes();
+  }, 260);
 }
-mergeMoonV2=mergeMoonPaged;
-$('confirmMoonImport').onclick=async()=>{const operation='import-moon';if(!pendingMoonImport||!beginArchiveOperation(operation))return;const data=pendingMoonImport,count=data.highlights.length;try{if(window.yuejiHighlightsReady)await window.yuejiHighlightsReady;await saveMoonCovers(data,message=>$('importStatus').textContent=message);$('importStatus').textContent='正在分批保存书摘和阅读记录……';await mergeMoonV2(data);await requestPersistentStorage();data.zip=null;pendingMoonImport=null;$('importPreview').hidden=true;$('mrproFile').value='';$('importStatus').textContent=`导入完成：${state.books.length} 本书、${window.yuejiHighlightCount?.()||state.highlights.length} 条书摘，进度和封面已更新。`;toast(`已导入 ${count} 条书摘`)}catch(e){$('importStatus').textContent='保存封面或书摘时失败，现有阅读数据没有变化。';toast('导入失败')}finally{endArchiveOperation(operation)}};
-$('mrproFile').onchange=e=>{const f=e.target.files[0];if(f)importMoonV3(f)};
-function finishedBooksByMonth(year){const out=Array.from({length:12},()=>[]);state.books.filter(b=>+b.progress>=99.95&&String(b.finishedDate||'').startsWith(String(year))).forEach(b=>out[+b.finishedDate.slice(5,7)-1].push(b));return out}
-async function renderYearWall(){const year=+$('yearWallYear').value||today.getFullYear(),months=finishedBooksByMonth(year);$('yearWallPreview').innerHTML=months.some(x=>x.length)?months.map((bs,i)=>`<div class="year-row"><b>${String(i+1).padStart(2,'0')}</b><div>${bs.map(x=>`<span class="poster-cover cover-art" style="--cover:${x.color}"><img data-cover-key="${esc(x.key)}" alt=""><i>${esc(x.title)}</i></span>`).join('')}</div></div>`).join(''):`<div class="empty-text">暂无带有“读完日期”的 ${year} 年书籍。进度达到 100% 后会自动出现，也可以在书籍资料里补日期。</div>`;await hydrateCovers($('yearWallPreview'))}
-$('yearWallYear').value=today.getFullYear();$('yearWallYear').onchange=renderYearWall;
-async function imageFromBlob(blob){return new Promise((resolve,reject)=>{const img=new Image(),u=URL.createObjectURL(blob);img.onload=()=>{URL.revokeObjectURL(u);resolve(img)};img.onerror=reject;img.src=u})}
-$('saveYearWall').onclick=async()=>{const year=+$('yearWallYear').value||today.getFullYear(),months=finishedBooksByMonth(year),canvas=document.createElement('canvas'),ctx=canvas.getContext('2d'),W=1440,rowH=190,top=230,H=Math.max(1920,top+months.reduce((a,bs)=>a+Math.max(1,Math.ceil(bs.length/9))*rowH,0)+100);canvas.width=W;canvas.height=H;ctx.fillStyle='#050505';ctx.fillRect(0,0,W,H);ctx.fillStyle='#fff';ctx.textAlign='center';ctx.font='bold 72px Georgia,serif';ctx.fillText('My Year in Books',W/2,105);ctx.font='44px Georgia,serif';ctx.fillText(String(year),W/2,165);ctx.textAlign='left';let y=top;for(let m=0;m<12;m++){const bs=months[m],rows=Math.max(1,Math.ceil(bs.length/9));ctx.fillStyle='#fff';ctx.font='bold 40px Georgia,serif';ctx.fillText(String(m+1).padStart(2,'0'),55,y+90);for(let i=0;i<bs.length;i++){const b=bs[i],x=150+(i%9)*137,yy=y+Math.floor(i/9)*rowH;try{const blob=await getCover(b.key);if(blob){const img=await imageFromBlob(blob);ctx.drawImage(img,x,yy,110,160)}else throw 0}catch(e){ctx.fillStyle=b.color||'#666';ctx.fillRect(x,yy,110,160);ctx.fillStyle='#fff';ctx.font='18px sans-serif';const t=b.title.slice(0,7);ctx.fillText(t,x+10,yy+45)}}y+=rows*rowH}const a=document.createElement('a');a.download=`My Year in Books ${year}.png`;a.href=canvas.toDataURL('image/png');a.click();toast('年度书墙图片已保存')};
-let calendarView='month',calendarDate=new Date(today.getFullYear(),today.getMonth(),1);
-function primaryBookForDay(ss){const totals={};ss.forEach(s=>totals[s.bookKey]=(totals[s.bookKey]||0)+(+s.minutes||0));const key=Object.entries(totals).sort((a,b)=>b[1]-a[1])[0]?.[0];return book(key)}
-function renderToday(){const d=dayData(todayKey);$('todayDate').textContent=fmtDate(todayKey);$('todayMinutes').textContent=d.minutes;$('todayBooks').textContent=d.books.size;$('todayWords').textContent=d.words.toLocaleString('zh-CN');$('todayMark').textContent='📖';const titles=[...d.books].map(k=>book(k)?.title).filter(Boolean);$('todayCompact').textContent=titles.length?`今天读过：${titles.join('、')}`:d.journal?.thought?'今天已经写下感想。':'今天暂无导入的阅读记录。'}
-async function renderMonthCalendar(){const y=calendarDate.getFullYear(),m=calendarDate.getMonth(),first=new Date(y,m,1).getDay(),last=new Date(y,m+1,0).getDate(),cells=[];for(let i=0;i<first;i++)cells.push('<span class="calendar-blank"></span>');for(let n=1;n<=last;n++){const key=dateKey(new Date(y,m,n)),day=dayData(key),ss=day.sessions,specific=ss.filter(s=>s.bookKey),books=[...new Set(specific.map(s=>s.bookKey))],hasWeReadTotal=ss.some(s=>s.source==='weread'&&s.aggregate===true&&!s.bookKey),b=primaryBookForDay(specific),mins=day.minutes,badge=b&&hasWeReadTotal?'微信':books.length>1?`+${books.length-1}`:'';cells.push(`<button class="cover-day ${ss.length?'has-reading':''} ${hasWeReadTotal?'has-weread-total':''} ${key===todayKey?'is-today':''}" data-day="${key}" aria-label="${esc(`${key}${mins?`，阅读${mins}分钟`:''}${hasWeReadTotal?'，包含无法细分到书的微信读书时间':''}`)}"><span class="day-number">${n}</span>${b?`<span class="day-cover cover-art" style="--cover:${b.color||'#666'}"><img data-cover-key="${esc(b.key)}" alt=""><i>${esc(b.title)}</i></span>`:hasWeReadTotal?'<span class="day-source-card"><strong>📖</strong><i>微信读书</i></span>':''}${badge?`<em class="${hasWeReadTotal?'source-badge':''}">${esc(badge)}</em>`:''}${mins?`<small>${hasWeReadTotal&&!b?'微信 · ':''}${mins} 分钟</small>`:''}</button>`)}$('monthCalendar').innerHTML=cells.join('');document.querySelectorAll('#monthCalendar [data-day]').forEach(x=>x.onclick=()=>openJournal(x.dataset.day));await hydrateCovers($('monthCalendar'))}
-function renderYearCalendar(){const y=calendarDate.getFullYear(),wrap=$('challengeGrid');wrap.innerHTML='';let count=0;for(let m=0;m<12;m++){const first=new Date(y,m,1).getDay(),last=new Date(y,m+1,0).getDate(),el=document.createElement('div');el.className='month-block';el.innerHTML=`<div class="month-name">${m+1}月</div>`;const grid=document.createElement('div');grid.className='month-days';for(let i=0;i<first;i++){const x=document.createElement('i');x.className='cal-day out';grid.append(x)}for(let n=1;n<=last;n++){const key=dateKey(new Date(y,m,n)),dd=dayData(key),b=document.createElement('button');b.className='cal-day';if(dd.read){b.classList.add('read');count++}if(dd.journal?.thought||dd.journal?.quote)b.classList.add('note');if(key===todayKey)b.classList.add('today');b.title=fmtDate(key);b.onclick=()=>openJournal(key);grid.append(b)}el.append(grid);wrap.append(el)}$('challengeRead').textContent=count}
-function calendarDataYears(){const years=new Set([today.getFullYear()]),add=d=>{if(/^\d{4}-\d{2}-\d{2}$/.test(String(d||'')))years.add(+String(d).slice(0,4))};state.sessions.forEach(s=>add(s.date));Object.values(state.journals||{}).forEach(j=>add(j.date));state.books.forEach(b=>{add(b.finishedDate);(window.yuejiVerifiedWeReadActivityDates?.(b)||[]).forEach(add)});return [...years].filter(Number.isFinite).sort((a,b)=>b-a)}
-function syncCalendarYearOptions(){const select=$('calendarYearSelect');if(!select)return;const years=calendarDataYears(),signature=years.join(',');if(select.dataset.years!==signature){select.innerHTML=years.map(y=>`<option value="${y}">${y}年</option>`).join('');select.dataset.years=signature}}
-function renderCalendarPage(){const y=calendarDate.getFullYear(),m=calendarDate.getMonth(),yearMode=calendarView==='year',period=$('calendarPeriod'),select=$('calendarYearSelect'),prev=$('calendarPrev'),next=$('calendarNext');syncCalendarYearOptions();period.hidden=yearMode;select.hidden=!yearMode;if(yearMode){const years=calendarDataYears(),index=years.indexOf(y);if(index<0&&years.length)calendarDate=new Date(years[0],0,1);select.value=String(calendarDate.getFullYear());prev.disabled=years.indexOf(calendarDate.getFullYear())>=years.length-1;next.disabled=years.indexOf(calendarDate.getFullYear())<=0}else{period.textContent=`${y}年${m+1}月`;prev.disabled=false;next.disabled=false}$('monthCalendarWrap').hidden=calendarView!=='month';$('yearCalendarWrap').hidden=!yearMode;if(calendarView==='month')renderMonthCalendar();else renderYearCalendar()}
-$('calendarMode').onclick=e=>{const b=e.target.closest('[data-calendar-mode]');if(!b)return;calendarView=b.dataset.calendarMode;document.querySelectorAll('#calendarMode button').forEach(x=>x.classList.toggle('active',x===b));renderCalendarPage()};
-function moveCalendarPeriod(direction){if(calendarView==='month')calendarDate=new Date(calendarDate.getFullYear(),calendarDate.getMonth()+direction,1);else{const years=calendarDataYears(),index=years.indexOf(calendarDate.getFullYear()),target=years[index-direction];if(target===undefined)return;calendarDate=new Date(target,0,1)}renderCalendarPage()}
-$('calendarPrev').onclick=()=>moveCalendarPeriod(-1);
-$('calendarNext').onclick=()=>moveCalendarPeriod(1);
-$('calendarYearSelect').onchange=e=>{const y=+e.target.value;if(!Number.isFinite(y))return;calendarDate=new Date(y,0,1);renderCalendarPage()};
-function switchPage(p){page=p;document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.dataset.page===p));document.querySelectorAll('.nav-btn').forEach(x=>x.classList.toggle('active',x.dataset.go===p));if(p==='calendar')renderCalendarPage();if(p==='notes')renderNotes();if(p==='analytics')renderAnalytics();if(p==='monthly'){renderMonthly();(window.renderYearWall||renderYearWall)()}}
-function renderAll(){applyAccent();$('sourcePill').textContent=state.source||'网页记录';renderBookOptions();renderToday();if(page==='notes')renderNotes();if(page==='calendar')renderCalendarPage();if(page==='analytics'){renderAnalytics();window.yuejiRenderEvolution?.()}if(page==='monthly'){renderMonthly();(window.renderYearWall||renderYearWall)()}window.yuejiUpdateDuplicateBooks?.()}
+$('noteSearch').oninput = scheduleNoteSearch;
+$('noteBookFilter').onchange = () => {
+  noteSearchVersion++;
+  clearTimeout(noteSearchTimer);
+  noteRenderLimit = 80;
+  renderNotes();
+};
+$('noteKindSeg').onclick = (e) => {
+  const b = e.target.closest('[data-kind]');
+  if (!b) return;
+  noteSearchVersion++;
+  clearTimeout(noteSearchTimer);
+  noteKind = b.dataset.kind;
+  noteRenderLimit = 80;
+  document
+    .querySelectorAll('#noteKindSeg button')
+    .forEach((x) => x.classList.toggle('active', x === b));
+  renderNotes();
+};
+async function parseMoonBundle(file, onProgress = () => {}) {
+  onProgress('正在打开备份目录……');
+  const zip = await JSZip.loadAsync(file),
+    names = Object.keys(zip.files).filter((n) => !zip.files[n].dir),
+    manifest = names.find((n) => /(^|\/)_names\.list$/i.test(n));
+  let lines = [],
+    dir = '';
+  if (manifest) {
+    lines = (await zip.file(manifest).async('text')).replace(/^\uFEFF/, '').split(/\r?\n/);
+    dir = manifest.slice(0, manifest.lastIndexOf('/') + 1);
+  }
+  const logicalFile = (pattern) => {
+    const i = lines.findIndex((n) => pattern.test(n));
+    return i < 0 ? null : zip.file(`${dir}${i + 1}.tag`);
+  };
+  let dbFile = names.find((n) => /(^|\/)mrbooks\.db$/i.test(n));
+  dbFile = dbFile ? zip.file(dbFile) : logicalFile(/(^|\/)mrbooks\.db$/i);
+  if (!dbFile) throw new Error('备份中没有找到 mrbooks.db');
+  onProgress('正在解压阅读数据库……');
+  const dbBytes = await dbFile.async('arraybuffer'),
+    data = await parseMoonDatabase(dbBytes, onProgress),
+    byFile = new Map(data.books.map((b) => [canonicalFile(b.file), b]));
+  const posFile = logicalFile(/(^|\/)positions10\.xml$/i);
+  if (posFile) {
+    onProgress('正在整理阅读进度……');
+    const xml = new DOMParser().parseFromString(await posFile.async('text'), 'application/xml');
+    for (const el of xml.querySelectorAll('string[name]')) {
+      const filename = el.getAttribute('name') || '',
+        m = el.textContent.match(/(\d+(?:\.\d+)?)%/);
+      if (!m || !/\.(epub|mobi|azw3?|pdf|txt|cbz|cbr)$/i.test(filename)) continue;
+      let b = byFile.get(canonicalFile(filename));
+      if (!b) {
+        b = {
+          key: moonKey(filename),
+          title: cleanTitle(filename),
+          file: filename,
+          author: '',
+          category: '',
+          progress: 0,
+          status: 'unread',
+          minutes: 0,
+          words: 0,
+          days: 0,
+          color: palette[data.books.length % palette.length],
+        };
+        data.books.push(b);
+        byFile.set(canonicalFile(filename), b);
+      }
+      b.progress = Math.max(+b.progress || 0, Math.min(100, +m[1]));
+      b.progressSource = 'moon';
+      b.status = b.progress >= 99.95 ? 'done' : b.progress > 0 ? 'reading' : 'unread';
+    }
+  }
+  const latestDate = new Map();
+  data.sessions.forEach((s) => {
+    if (s.date > (latestDate.get(s.bookKey) || '')) latestDate.set(s.bookKey, s.date);
+  });
+  data.books.forEach((b) => {
+    if (b.progress >= 99.95) b.finishedDate = latestDate.get(b.key) || '';
+  });
+  const coverRefs = [],
+    covered = new Set();
+  for (let i = 0; i < lines.length; i++) {
+    const logical = lines[i];
+    if (!/\.moonreader\/.+_\d+\.png$/i.test(logical)) continue;
+    const original = logical.replace(/^.*\.MoonReader\//i, '').replace(/_\d+\.png$/i, ''),
+      b = byFile.get(canonicalFile(original)),
+      entry = `${dir}${i + 1}.tag`;
+    if (b && zip.file(entry) && !covered.has(b.key)) {
+      b.hasCover = true;
+      covered.add(b.key);
+      coverRefs.push({ bookKey: b.key, entry });
+    }
+  }
+  return { ...data, coverRefs, zip };
+}
+async function saveMoonCovers(data, onProgress = () => {}) {
+  const refs = data.coverRefs || [];
+  for (let start = 0; start < refs.length; start += 8) {
+    const batch = [];
+    for (const ref of refs.slice(start, start + 8)) {
+      const file = data.zip?.file(ref.entry);
+      if (file) batch.push({ bookKey: ref.bookKey, blob: await file.async('blob') });
+    }
+    if (batch.length) await putCovers(batch);
+    onProgress(`正在保存封面 ${Math.min(start + 8, refs.length)} / ${refs.length}……`);
+    await yieldToBrowser();
+  }
+}
+async function importMoonV3(file) {
+  $('importStatus').textContent = '正在读取备份……';
+  $('importPreview').hidden = true;
+  pendingMoonImport = null;
+  try {
+    const data = await parseMoonBundle(
+      file,
+      (message) => ($('importStatus').textContent = message),
+    );
+    pendingMoonImport = data;
+    const days = new Set(data.sessions.map((s) => s.date)).size,
+      comments = data.highlights.filter((h) => h.note.trim()).length,
+      progress = data.books.filter((b) => b.progress > 0).length;
+    $('importPreviewText').innerHTML =
+      `<b>已经读取完成，尚未写入网页</b><div class="preview-grid"><span><strong>${data.books.length}</strong> 本书</span><span><strong>${data.highlights.length}</strong> 条书摘</span><span><strong>${comments}</strong> 条批注</span><span><strong>${progress}</strong> 本有进度</span></div><p>还识别到 ${data.coverRefs.length} 张封面和 ${days} 个阅读日。封面将在确认后分批保存。</p>`;
+    $('importStatus').textContent = `文件：${file.name} · 全程在当前浏览器内解析。`;
+    $('importPreview').hidden = false;
+  } catch (err) {
+    $('importStatus').textContent = `没有成功解析：${err.message}。现有数据没有变化。`;
+    toast('导入失败');
+  }
+}
+async function mergeMoonPaged(data) {
+  const before = state,
+    isDemo = state.source === '演示数据',
+    base = isDemo ? { ...state, books: [], sessions: [], journals: {}, highlights: [] } : state,
+    bookMap = new Map(base.books.map((b) => [b.key, b]));
+  data.books.forEach((raw) => {
+    const b = { ...raw, sources: [...new Set([...(raw.sources || []), 'moon'])] },
+      old = bookMap.get(b.key);
+    if (!old) {
+      bookMap.set(b.key, b);
+      return;
+    }
+    bookMap.set(b.key, {
+      ...old,
+      ...b,
+      title: old.title || b.title,
+      author: old.author || b.author,
+      category: old.category || b.category,
+      color: old.color || b.color,
+      progress: old.progressSource === 'manual' ? old.progress : b.progress,
+      progressSource: old.progressSource || 'moon',
+      finishedDate: old.finishedDate || b.finishedDate,
+      sources: [...new Set([...(old.sources || []), ...b.sources])],
+    });
+  });
+  const sessions = new Map(base.sessions.map((s) => [`${s.date}|${s.bookKey}`, s]));
+  data.sessions.forEach((s) =>
+    sessions.set(`${s.date}|${s.bookKey}`, { ...s, source: s.source || 'moon' }),
+  );
+  try {
+    if (highlightsDbReady) {
+      if (isDemo) await replaceHighlightsDb(data.highlights);
+      else await putHighlightsDb(data.highlights);
+    }
+    const fallbackHighlights = new Map((base.highlights || []).map((h) => [h.id, h]));
+    data.highlights.forEach((h) =>
+      fallbackHighlights.set(h.id, { ...h, source: h.source || 'moon' }),
+    );
+    state = normalize({
+      ...base,
+      books: [...bookMap.values()],
+      sessions: [...sessions.values()],
+      highlights: highlightsDbReady ? [] : [...fallbackHighlights.values()],
+      source: '静读天下',
+      importedAt: new Date().toISOString(),
+    });
+    const reconciled = await reconcileCrossSourceBooks();
+    if (reconciled.changed && typeof window.yuejiPersistMergedWeReadState === 'function')
+      try {
+        await window.yuejiPersistMergedWeReadState();
+      } catch (error) {
+        console.warn('合并结果暂未写入微信缓存，将在下次同步时重建', error);
+      }
+    save();
+    renderAll();
+  } catch (error) {
+    state = before;
+    throw error;
+  }
+}
+mergeMoonV2 = mergeMoonPaged;
+$('confirmMoonImport').onclick = async () => {
+  const operation = 'import-moon';
+  if (!pendingMoonImport || !beginArchiveOperation(operation)) return;
+  const data = pendingMoonImport,
+    count = data.highlights.length;
+  try {
+    if (window.yuejiHighlightsReady) await window.yuejiHighlightsReady;
+    await saveMoonCovers(data, (message) => ($('importStatus').textContent = message));
+    $('importStatus').textContent = '正在分批保存书摘和阅读记录……';
+    await mergeMoonV2(data);
+    await requestPersistentStorage();
+    data.zip = null;
+    pendingMoonImport = null;
+    $('importPreview').hidden = true;
+    $('mrproFile').value = '';
+    $('importStatus').textContent =
+      `导入完成：${state.books.length} 本书、${window.yuejiHighlightCount?.() || state.highlights.length} 条书摘，进度和封面已更新。`;
+    toast(`已导入 ${count} 条书摘`);
+  } catch (e) {
+    $('importStatus').textContent = '保存封面或书摘时失败，现有阅读数据没有变化。';
+    toast('导入失败');
+  } finally {
+    endArchiveOperation(operation);
+  }
+};
+$('mrproFile').onchange = (e) => {
+  const f = e.target.files[0];
+  if (f) importMoonV3(f);
+};
+function finishedBooksByMonth(year) {
+  const out = Array.from({ length: 12 }, () => []);
+  state.books
+    .filter((b) => +b.progress >= 99.95 && String(b.finishedDate || '').startsWith(String(year)))
+    .forEach((b) => out[+b.finishedDate.slice(5, 7) - 1].push(b));
+  return out;
+}
+async function renderYearWall() {
+  const year = +$('yearWallYear').value || today.getFullYear(),
+    months = finishedBooksByMonth(year);
+  $('yearWallPreview').innerHTML = months.some((x) => x.length)
+    ? months
+        .map(
+          (bs, i) =>
+            `<div class="year-row"><b>${String(i + 1).padStart(2, '0')}</b><div>${bs.map((x) => `<span class="poster-cover cover-art" style="--cover:${x.color}"><img data-cover-key="${esc(x.key)}" alt=""><i>${esc(x.title)}</i></span>`).join('')}</div></div>`,
+        )
+        .join('')
+    : `<div class="empty-text">暂无带有“读完日期”的 ${year} 年书籍。进度达到 100% 后会自动出现，也可以在书籍资料里补日期。</div>`;
+  await hydrateCovers($('yearWallPreview'));
+}
+$('yearWallYear').value = today.getFullYear();
+$('yearWallYear').onchange = renderYearWall;
+async function imageFromBlob(blob) {
+  return new Promise((resolve, reject) => {
+    const img = new Image(),
+      u = URL.createObjectURL(blob);
+    img.onload = () => {
+      URL.revokeObjectURL(u);
+      resolve(img);
+    };
+    img.onerror = reject;
+    img.src = u;
+  });
+}
+$('saveYearWall').onclick = async () => {
+  const year = +$('yearWallYear').value || today.getFullYear(),
+    months = finishedBooksByMonth(year),
+    canvas = document.createElement('canvas'),
+    ctx = canvas.getContext('2d'),
+    W = 1440,
+    rowH = 190,
+    top = 230,
+    H = Math.max(
+      1920,
+      top + months.reduce((a, bs) => a + Math.max(1, Math.ceil(bs.length / 9)) * rowH, 0) + 100,
+    );
+  canvas.width = W;
+  canvas.height = H;
+  ctx.fillStyle = '#050505';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 72px Georgia,serif';
+  ctx.fillText('My Year in Books', W / 2, 105);
+  ctx.font = '44px Georgia,serif';
+  ctx.fillText(String(year), W / 2, 165);
+  ctx.textAlign = 'left';
+  let y = top;
+  for (let m = 0; m < 12; m++) {
+    const bs = months[m],
+      rows = Math.max(1, Math.ceil(bs.length / 9));
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 40px Georgia,serif';
+    ctx.fillText(String(m + 1).padStart(2, '0'), 55, y + 90);
+    for (let i = 0; i < bs.length; i++) {
+      const b = bs[i],
+        x = 150 + (i % 9) * 137,
+        yy = y + Math.floor(i / 9) * rowH;
+      try {
+        const blob = await getCover(b.key);
+        if (blob) {
+          const img = await imageFromBlob(blob);
+          ctx.drawImage(img, x, yy, 110, 160);
+        } else throw 0;
+      } catch (e) {
+        ctx.fillStyle = b.color || '#666';
+        ctx.fillRect(x, yy, 110, 160);
+        ctx.fillStyle = '#fff';
+        ctx.font = '18px sans-serif';
+        const t = b.title.slice(0, 7);
+        ctx.fillText(t, x + 10, yy + 45);
+      }
+    }
+    y += rows * rowH;
+  }
+  const a = document.createElement('a');
+  a.download = `My Year in Books ${year}.png`;
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+  toast('年度书墙图片已保存');
+};
+let calendarView = 'month',
+  calendarDate = new Date(today.getFullYear(), today.getMonth(), 1);
+function primaryBookForDay(ss) {
+  const totals = {};
+  ss.forEach((s) => (totals[s.bookKey] = (totals[s.bookKey] || 0) + (+s.minutes || 0)));
+  const key = Object.entries(totals).sort((a, b) => b[1] - a[1])[0]?.[0];
+  return book(key);
+}
+function renderToday() {
+  const d = dayData(todayKey);
+  $('todayDate').textContent = fmtDate(todayKey);
+  $('todayMinutes').textContent = d.minutes;
+  $('todayBooks').textContent = d.books.size;
+  $('todayWords').textContent = d.words.toLocaleString('zh-CN');
+  $('todayMark').textContent = '📖';
+  const titles = [...d.books].map((k) => book(k)?.title).filter(Boolean);
+  $('todayCompact').textContent = titles.length
+    ? `今天读过：${titles.join('、')}`
+    : d.journal?.thought
+      ? '今天已经写下感想。'
+      : '今天暂无导入的阅读记录。';
+}
+async function renderMonthCalendar() {
+  const y = calendarDate.getFullYear(),
+    m = calendarDate.getMonth(),
+    first = new Date(y, m, 1).getDay(),
+    last = new Date(y, m + 1, 0).getDate(),
+    cells = [];
+  for (let i = 0; i < first; i++) cells.push('<span class="calendar-blank"></span>');
+  for (let n = 1; n <= last; n++) {
+    const key = dateKey(new Date(y, m, n)),
+      day = dayData(key),
+      ss = day.sessions,
+      specific = ss.filter((s) => s.bookKey),
+      books = [...new Set(specific.map((s) => s.bookKey))],
+      hasWeReadTotal = ss.some((s) => s.source === 'weread' && s.aggregate === true && !s.bookKey),
+      b = primaryBookForDay(specific),
+      mins = day.minutes,
+      badge = b && hasWeReadTotal ? '微信' : books.length > 1 ? `+${books.length - 1}` : '';
+    cells.push(
+      `<button class="cover-day ${ss.length ? 'has-reading' : ''} ${hasWeReadTotal ? 'has-weread-total' : ''} ${key === todayKey ? 'is-today' : ''}" data-day="${key}" aria-label="${esc(`${key}${mins ? `，阅读${mins}分钟` : ''}${hasWeReadTotal ? '，包含无法细分到书的微信读书时间' : ''}`)}"><span class="day-number">${n}</span>${b ? `<span class="day-cover cover-art" style="--cover:${b.color || '#666'}"><img data-cover-key="${esc(b.key)}" alt=""><i>${esc(b.title)}</i></span>` : hasWeReadTotal ? '<span class="day-source-card"><strong>📖</strong><i>微信读书</i></span>' : ''}${badge ? `<em class="${hasWeReadTotal ? 'source-badge' : ''}">${esc(badge)}</em>` : ''}${mins ? `<small>${hasWeReadTotal && !b ? '微信 · ' : ''}${mins} 分钟</small>` : ''}</button>`,
+    );
+  }
+  $('monthCalendar').innerHTML = cells.join('');
+  document
+    .querySelectorAll('#monthCalendar [data-day]')
+    .forEach((x) => (x.onclick = () => openJournal(x.dataset.day)));
+  await hydrateCovers($('monthCalendar'));
+}
+function renderYearCalendar() {
+  const y = calendarDate.getFullYear(),
+    wrap = $('yearCalendarGrid');
+  wrap.innerHTML = '';
+  let count = 0;
+  for (let m = 0; m < 12; m++) {
+    const first = new Date(y, m, 1).getDay(),
+      last = new Date(y, m + 1, 0).getDate(),
+      el = document.createElement('div');
+    el.className = 'month-block';
+    el.innerHTML = `<div class="month-name">${m + 1}月</div>`;
+    const grid = document.createElement('div');
+    grid.className = 'month-days';
+    for (let i = 0; i < first; i++) {
+      const x = document.createElement('i');
+      x.className = 'cal-day out';
+      grid.append(x);
+    }
+    for (let n = 1; n <= last; n++) {
+      const key = dateKey(new Date(y, m, n)),
+        dd = dayData(key),
+        b = document.createElement('button');
+      b.className = 'cal-day';
+      if (dd.read) {
+        b.classList.add('read');
+        count++;
+      }
+      if (dd.journal?.thought || dd.journal?.quote) b.classList.add('note');
+      if (key === todayKey) b.classList.add('today');
+      b.title = fmtDate(key);
+      b.onclick = () => openJournal(key);
+      grid.append(b);
+    }
+    el.append(grid);
+    wrap.append(el);
+  }
+  $('yearReadDays').textContent = count;
+}
+function calendarDataYears() {
+  const years = new Set([today.getFullYear()]),
+    add = (d) => {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(String(d || ''))) years.add(+String(d).slice(0, 4));
+    };
+  state.sessions.forEach((s) => add(s.date));
+  Object.values(state.journals || {}).forEach((j) => add(j.date));
+  state.books.forEach((b) => {
+    add(b.finishedDate);
+    (window.yuejiVerifiedWeReadActivityDates?.(b) || []).forEach(add);
+  });
+  return [...years].filter(Number.isFinite).sort((a, b) => b - a);
+}
+function syncCalendarYearOptions() {
+  const select = $('calendarYearSelect');
+  if (!select) return;
+  const years = calendarDataYears(),
+    signature = years.join(',');
+  if (select.dataset.years !== signature) {
+    select.innerHTML = years.map((y) => `<option value="${y}">${y}年</option>`).join('');
+    select.dataset.years = signature;
+  }
+}
+function renderCalendarPage() {
+  const y = calendarDate.getFullYear(),
+    m = calendarDate.getMonth(),
+    yearMode = calendarView === 'year',
+    period = $('calendarPeriod'),
+    select = $('calendarYearSelect'),
+    prev = $('calendarPrev'),
+    next = $('calendarNext');
+  syncCalendarYearOptions();
+  period.hidden = yearMode;
+  select.hidden = !yearMode;
+  if (yearMode) {
+    const years = calendarDataYears(),
+      index = years.indexOf(y);
+    if (index < 0 && years.length) calendarDate = new Date(years[0], 0, 1);
+    select.value = String(calendarDate.getFullYear());
+    prev.disabled = years.indexOf(calendarDate.getFullYear()) >= years.length - 1;
+    next.disabled = years.indexOf(calendarDate.getFullYear()) <= 0;
+  } else {
+    period.textContent = `${y}年${m + 1}月`;
+    prev.disabled = false;
+    next.disabled = false;
+  }
+  $('monthCalendarWrap').hidden = calendarView !== 'month';
+  $('yearCalendarWrap').hidden = !yearMode;
+  if (calendarView === 'month') renderMonthCalendar();
+  else renderYearCalendar();
+}
+$('calendarMode').onclick = (e) => {
+  const b = e.target.closest('[data-calendar-mode]');
+  if (!b) return;
+  calendarView = b.dataset.calendarMode;
+  document
+    .querySelectorAll('#calendarMode button')
+    .forEach((x) => x.classList.toggle('active', x === b));
+  renderCalendarPage();
+};
+function moveCalendarPeriod(direction) {
+  if (calendarView === 'month')
+    calendarDate = new Date(calendarDate.getFullYear(), calendarDate.getMonth() + direction, 1);
+  else {
+    const years = calendarDataYears(),
+      index = years.indexOf(calendarDate.getFullYear()),
+      target = years[index - direction];
+    if (target === undefined) return;
+    calendarDate = new Date(target, 0, 1);
+  }
+  renderCalendarPage();
+}
+$('calendarPrev').onclick = () => moveCalendarPeriod(-1);
+$('calendarNext').onclick = () => moveCalendarPeriod(1);
+$('calendarYearSelect').onchange = (e) => {
+  const y = +e.target.value;
+  if (!Number.isFinite(y)) return;
+  calendarDate = new Date(y, 0, 1);
+  renderCalendarPage();
+};
+function switchPage(p) {
+  page = p;
+  document
+    .querySelectorAll('.page')
+    .forEach((x) => x.classList.toggle('active', x.dataset.page === p));
+  document
+    .querySelectorAll('.nav-btn')
+    .forEach((x) => x.classList.toggle('active', x.dataset.go === p));
+  if (p === 'calendar') renderCalendarPage();
+  if (p === 'notes') renderNotes();
+  if (p === 'analytics') renderAnalytics();
+  if (p === 'monthly') {
+    renderMonthly();
+    (window.renderYearWall || renderYearWall)();
+  }
+}
+function renderAll() {
+  applyAccent();
+  $('sourcePill').textContent = state.source || '网页记录';
+  renderBookOptions();
+  renderToday();
+  if (page === 'notes') renderNotes();
+  if (page === 'calendar') renderCalendarPage();
+  if (page === 'analytics') {
+    renderAnalytics();
+  }
+  if (page === 'monthly') {
+    renderMonthly();
+    (window.renderYearWall || renderYearWall)();
+  }
+  window.yuejiUpdateDuplicateBooks?.();
+}
 renderAll();
-window.yuejiHighlightsReady=initHighlightsStorage();
+window.yuejiHighlightsReady = initHighlightsStorage();

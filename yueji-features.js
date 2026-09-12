@@ -1,153 +1,1656 @@
-(()=>{
+(() => {
   'use strict';
 
-  const q=(s,r=document)=>r.querySelector(s);
-  const qa=(s,r=document)=>[...r.querySelectorAll(s)];
-  const esc2=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+  const q = (s, r = document) => r.querySelector(s);
+  const qa = (s, r = document) => [...r.querySelectorAll(s)];
+  const esc2 = (s) =>
+    String(s ?? '').replace(
+      /[&<>"']/g,
+      (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[m],
+    );
 
-  function injectFeatureStyles(){
-    if(q('#yuejiFeatureStyles'))return;
-    const s=document.createElement('style');s.id='yuejiFeatureStyles';s.textContent=`
+  function injectFeatureStyles() {
+    if (q('#yuejiFeatureStyles')) return;
+    const s = document.createElement('style');
+    s.id = 'yuejiFeatureStyles';
+    s.textContent = `
       .wall-spine{background:linear-gradient(90deg,color-mix(in srgb,var(--spine,#648d7b) 72%,#000),var(--spine,#648d7b) 18%,color-mix(in srgb,var(--spine,#648d7b) 78%,#fff));color:var(--spine-text,#fff);box-shadow:inset 1px 0 rgba(255,255,255,.22),inset -2px 0 rgba(0,0,0,.14)}
       .module-export-btn{border:1px solid var(--line);background:color-mix(in srgb,var(--card) 88%,transparent);color:var(--muted);border-radius:999px;padding:6px 10px;font-size:.72rem;white-space:nowrap}.module-export-btn:hover{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
       .section-head>.module-export-btn{margin-left:auto}.card.export-corner{position:relative;padding-top:58px}.card.export-corner>.module-export-btn{position:absolute;right:18px;top:16px}
       .feature-dialog{position:fixed;inset:0;z-index:90;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(0,0,0,.52);backdrop-filter:blur(7px)}.feature-dialog.show{display:flex}.feature-panel{width:min(960px,100%);max-height:92vh;overflow:auto;border-radius:24px;background:var(--bg);border:1px solid var(--line);box-shadow:0 28px 90px rgba(0,0,0,.32)}.feature-panel-head{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}.feature-panel-actions{display:flex;gap:8px;flex-wrap:wrap}.feature-font-row{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--line);background:var(--card)}.feature-font-row label{font-weight:800;white-space:nowrap}.feature-font-select{min-width:220px;max-width:100%;border:1px solid var(--line);background:var(--soft);color:var(--ink);border-radius:12px;padding:10px 12px}.feature-font-note{color:var(--muted);font-size:.76rem}.feature-preview{padding:20px;display:grid;place-items:center;min-height:220px}.feature-preview img{display:block;max-width:100%;height:auto;border-radius:14px;box-shadow:var(--shadow)}.feature-preview-status{color:var(--muted);text-align:center}.danger-btn{border:1px solid #b96262;background:#a64f4f;color:#fff;border-radius:14px;padding:12px 16px;font-weight:800}.delete-options{display:grid;gap:10px;padding:20px}.delete-options button{text-align:left}.delete-options small{display:block;margin-top:4px;opacity:.72;font-weight:400}.restore-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--soft)}
       .year-wall-mode{min-width:118px;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:9px 10px}.year-report-stats{display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 16px}.year-report-stats span{padding:6px 10px;border-radius:999px;background:color-mix(in srgb,var(--accent) 13%,var(--card));color:var(--muted);font-size:.74rem}.year-wall-preview .cover-art{background:color-mix(in srgb,var(--accent) 52%,var(--soft))}
-      .evolution-theme-legend{display:flex!important;flex-wrap:wrap;gap:8px 12px;margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--soft)}.evolution-theme-legend span{display:flex;align-items:center;gap:6px;max-width:190px;color:var(--muted);font-size:.74rem}.evolution-theme-legend i{width:13px;height:13px;border-radius:50%;flex:none;border:1px solid rgba(0,0,0,.16)}.evolution-theme-legend b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700}
       .read-check{color:var(--accent,#5f8f7b);font-weight:900}
       .duplicate-pair{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--soft);margin-top:10px}.duplicate-pair span{min-width:0}.duplicate-pair small{display:block;color:var(--muted);margin-top:4px}.duplicate-actions{display:flex;gap:7px;flex-wrap:wrap}.duplicate-actions button{padding:8px 10px}.manual-merge-box{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-top:12px}.manual-merge-box select{min-width:0;border:1px solid var(--line);border-radius:12px;padding:10px;background:var(--card);color:var(--ink)}
       .merged-book-list{margin-top:18px}.merged-book-list h5{margin:0 0 8px}.merged-book-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 12px;border:1px solid var(--line);border-radius:14px;background:var(--soft);margin-top:8px}.merged-book-row span{min-width:0}.merged-book-row b,.merged-book-row small{display:block}.merged-book-row small{color:var(--muted);margin-top:4px}
       @media(max-width:620px){.module-export-btn{padding:6px 8px}.feature-dialog{padding:8px}.feature-panel{border-radius:20px}.feature-panel-head{align-items:flex-start}.feature-font-row{align-items:stretch;flex-direction:column}.feature-font-select{width:100%}.feature-preview{padding:10px}.year-wall-actions{align-items:stretch;flex-wrap:wrap}.year-wall-mode{flex:1}.manual-merge-box{grid-template-columns:1fr}.duplicate-pair{grid-template-columns:1fr}}
-    `;document.head.appendChild(s);
+    `;
+    document.head.appendChild(s);
   }
 
-  function hexRgb(hex){let h=String(hex||'#5f927d').replace('#','');if(h.length===3)h=h.split('').map(x=>x+x).join('');const n=parseInt(h,16);return Number.isFinite(n)?[n>>16&255,n>>8&255,n&255]:[95,146,125]}
-  function rgbHex(r,g,b){return '#'+[r,g,b].map(x=>Math.max(0,Math.min(255,Math.round(x))).toString(16).padStart(2,'0')).join('')}
-  function luminance(hex){const [r,g,b]=hexRgb(hex).map(v=>{v/=255;return v<=.03928?v/12.92:((v+.055)/1.055)**2.4});return .2126*r+.7152*g+.0722*b}
-  function hash(s){let h=2166136261;for(const c of String(s)){h^=c.charCodeAt(0);h=Math.imul(h,16777619)}return h>>>0}
-  function fallbackColor(b){const base=hexRgb(state.accent),n=hash(b.key||b.title),mix=.18+(n%36)/100;return rgbHex(base[0]*(1-mix)+255*mix,base[1]*(1-mix)+255*mix,base[2]*(1-mix)+255*mix)}
+  function hexRgb(hex) {
+    let h = String(hex || '#5f927d').replace('#', '');
+    if (h.length === 3)
+      h = h
+        .split('')
+        .map((x) => x + x)
+        .join('');
+    const n = parseInt(h, 16);
+    return Number.isFinite(n) ? [(n >> 16) & 255, (n >> 8) & 255, n & 255] : [95, 146, 125];
+  }
+  function rgbHex(r, g, b) {
+    return (
+      '#' +
+      [r, g, b]
+        .map((x) =>
+          Math.max(0, Math.min(255, Math.round(x)))
+            .toString(16)
+            .padStart(2, '0'),
+        )
+        .join('')
+    );
+  }
+  function luminance(hex) {
+    const [r, g, b] = hexRgb(hex).map((v) => {
+      v /= 255;
+      return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+  function hash(s) {
+    let h = 2166136261;
+    for (const c of String(s)) {
+      h ^= c.charCodeAt(0);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  }
+  function fallbackColor(b) {
+    const base = hexRgb(state.accent),
+      n = hash(b.key || b.title),
+      mix = 0.18 + (n % 36) / 100;
+    return rgbHex(
+      base[0] * (1 - mix) + 255 * mix,
+      base[1] * (1 - mix) + 255 * mix,
+      base[2] * (1 - mix) + 255 * mix,
+    );
+  }
 
-  async function imageColor(blob){
-    const bmp=await createImageBitmap(blob),c=document.createElement('canvas');c.width=36;c.height=36;const x=c.getContext('2d',{willReadFrequently:true});x.drawImage(bmp,0,0,36,36);bmp.close?.();
-    const data=x.getImageData(0,0,36,36).data,buckets=new Map();
-    for(let i=0;i<data.length;i+=16){const r=data[i],g=data[i+1],b=data[i+2],a=data[i+3];if(a<180)continue;const hi=Math.max(r,g,b),lo=Math.min(r,g,b);if(hi>242&&lo>232||hi<24)continue;const sat=hi-lo;if(sat<12&&hi>205)continue;const qr=Math.round(r/32)*32,qg=Math.round(g/32)*32,qb=Math.round(b/32)*32,k=`${qr},${qg},${qb}`,score=1+sat/55;buckets.set(k,(buckets.get(k)||0)+score)}
-    const top=[...buckets].sort((a,b)=>b[1]-a[1])[0];if(!top)return null;let [r,g,b]=top[0].split(',').map(Number);const avg=(r+g+b)/3;r=avg+(r-avg)*1.12;g=avg+(g-avg)*1.12;b=avg+(b-avg)*1.12;return rgbHex(r,g,b)
+  async function imageColor(blob) {
+    const bmp = await createImageBitmap(blob),
+      c = document.createElement('canvas');
+    c.width = 36;
+    c.height = 36;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.drawImage(bmp, 0, 0, 36, 36);
+    bmp.close?.();
+    const data = x.getImageData(0, 0, 36, 36).data,
+      buckets = new Map();
+    for (let i = 0; i < data.length; i += 16) {
+      const r = data[i],
+        g = data[i + 1],
+        b = data[i + 2],
+        a = data[i + 3];
+      if (a < 180) continue;
+      const hi = Math.max(r, g, b),
+        lo = Math.min(r, g, b);
+      if ((hi > 242 && lo > 232) || hi < 24) continue;
+      const sat = hi - lo;
+      if (sat < 12 && hi > 205) continue;
+      const qr = Math.round(r / 32) * 32,
+        qg = Math.round(g / 32) * 32,
+        qb = Math.round(b / 32) * 32,
+        k = `${qr},${qg},${qb}`,
+        score = 1 + sat / 55;
+      buckets.set(k, (buckets.get(k) || 0) + score);
+    }
+    const top = [...buckets].sort((a, b) => b[1] - a[1])[0];
+    if (!top) return null;
+    let [r, g, b] = top[0].split(',').map(Number);
+    const avg = (r + g + b) / 3;
+    r = avg + (r - avg) * 1.12;
+    g = avg + (g - avg) * 1.12;
+    b = avg + (b - avg) * 1.12;
+    return rgbHex(r, g, b);
   }
-  async function bookDominant(b){
-    if(b.visualColor)return b.visualColor;let blob=null;
-    try{blob=await getCover(b.key)}catch{}
-    if(!blob){const url=b.cover||b.weReadCover;try{if(url){const r=await fetch(url,{mode:'cors',referrerPolicy:'no-referrer'});if(r.ok)blob=await r.blob()}}catch{}}
-    let color=null;try{if(blob)color=await imageColor(blob)}catch{}
-    b.visualColor=color||b.color||fallbackColor(b);return b.visualColor;
+  async function bookDominant(b) {
+    if (b.visualColor) return b.visualColor;
+    let blob = null;
+    try {
+      blob = await getCover(b.key);
+    } catch {}
+    if (!blob) {
+      const url = b.cover || b.weReadCover;
+      try {
+        if (url) {
+          const r = await fetch(url, { mode: 'cors', referrerPolicy: 'no-referrer' });
+          if (r.ok) blob = await r.blob();
+        }
+      } catch {}
+    }
+    let color = null;
+    try {
+      if (blob) color = await imageColor(blob);
+    } catch {}
+    b.visualColor = color || b.color || fallbackColor(b);
+    return b.visualColor;
   }
-  let coloring=false;
-  async function colorizeWall(){
-    if(coloring)return;const spines=qa('.wall-spine[data-layout-book]');if(!spines.length)return;coloring=true;let changed=false;
-    for(const el of spines){const b=state.books.find(x=>x.key===el.dataset.layoutBook);if(!b)continue;const had=b.visualColor,color=await bookDominant(b);if(!had&&b.visualColor)changed=true;el.style.setProperty('--spine',color);el.style.setProperty('--spine-text',luminance(color)>.42?'#17201c':'#fff')}
-    if(changed)save();coloring=false;
+  let coloring = false;
+  async function colorizeWall() {
+    if (coloring) return;
+    const spines = qa('.wall-spine[data-layout-book]');
+    if (!spines.length) return;
+    coloring = true;
+    let changed = false;
+    for (const el of spines) {
+      const b = state.books.find((x) => x.key === el.dataset.layoutBook);
+      if (!b) continue;
+      const had = b.visualColor,
+        color = await bookDominant(b);
+      if (!had && b.visualColor) changed = true;
+      el.style.setProperty('--spine', color);
+      el.style.setProperty('--spine-text', luminance(color) > 0.42 ? '#17201c' : '#fff');
+    }
+    if (changed) save();
+    coloring = false;
   }
 
-  function installDelete(){
-    const saveBtn=q('#saveBook');if(!saveBtn||q('#deleteBook'))return;
-    const btn=document.createElement('button');btn.id='deleteBook';btn.className='soft-btn';btn.textContent='移出或删除图书';btn.style.cssText='width:100%;margin-top:10px;color:#a64f4f';saveBtn.after(btn);
-    const d=document.createElement('div');d.id='deleteBookDialog';d.className='feature-dialog';d.innerHTML=`<div class="feature-panel" style="max-width:520px"><div class="feature-panel-head"><b>处理这本书</b><button class="soft-btn" data-close-delete>取消</button></div><div class="delete-options"><button class="soft-btn" data-delete-mode="hide"><b>只从书库隐藏</b><small>保留进度、阅读统计和书摘；微信读书再次同步也不会把它恢复到书库列表。</small></button><button class="danger-btn" data-delete-mode="all"><b>删除书籍和相关记录</b><small>删除进度、逐日记录、书摘与感悟，并保留一份可恢复的回收记录。</small></button></div></div>`;document.body.appendChild(d);
-    const close=()=>d.classList.remove('show');d.onclick=e=>{if(e.target===d||e.target.closest('[data-close-delete]'))close()};
-    btn.onclick=()=>{closeSheets();d.classList.add('show')};
-    d.querySelector('.delete-options').onclick=async e=>{const choice=e.target.closest('[data-delete-mode]');if(!choice)return;try{if(window.yuejiHighlightsReady)await window.yuejiHighlightsReady}catch{}const key=q('#bookKey').value,b=state.books.find(x=>x.key===key);if(!b)return close();const before=structuredClone(state),dbMode=window.yuejiHighlightsDbReady?.(),dbHighlights=dbMode?[]:(state.highlights||[]).filter(x=>x.bookKey===key),discardedTrashKeys=[];state.bookTrash=Array.isArray(state.bookTrash)?state.bookTrash:[];state.hiddenWeReadBookIds=Array.isArray(state.hiddenWeReadBookIds)?state.hiddenWeReadBookIds:[];
-      if(choice.dataset.deleteMode==='hide'){b.hidden=true;if(b.weReadBookId&&!state.hiddenWeReadBookIds.includes(String(b.weReadBookId)))state.hiddenWeReadBookIds.push(String(b.weReadBookId))}
-      else{const sessions=state.sessions.filter(x=>x.bookKey===key),journals=Object.entries(state.journals||{}).filter(([,x])=>x.bookKey===key);state.bookTrash.unshift({book:structuredClone(b),sessions:structuredClone(sessions),highlights:dbMode?[]:structuredClone(dbHighlights),highlightsInDb:Boolean(dbMode),journals:structuredClone(journals),deletedAt:Date.now()});state.bookTrash.slice(20).forEach(item=>{if(item?.book?.key)discardedTrashKeys.push(item.book.key)});state.bookTrash=state.bookTrash.slice(0,20);if(b.weReadBookId&&!state.hiddenWeReadBookIds.includes(String(b.weReadBookId)))state.hiddenWeReadBookIds.push(String(b.weReadBookId));state.books=state.books.filter(x=>x.key!==key);state.sessions=state.sessions.filter(x=>x.bookKey!==key);state.highlights=(state.highlights||[]).filter(x=>x.bookKey!==key);for(const [k] of journals)delete state.journals[k]}
-      try{if(dbMode&&choice.dataset.deleteMode==='all')await window.yuejiMoveHighlightsToTrash(key);if(choice.dataset.deleteMode==='all')await window.yuejiDeleteWeReadSyncBook?.(b.weReadBookId);save();for(const oldKey of discardedTrashKeys){if(dbMode)try{await window.yuejiDeleteHighlightTrash(oldKey)}catch{}try{await window.yuejiDeleteCover?.(oldKey)}catch{}}renderAll();close();updateRestore();updateHiddenBooks();toast(choice.dataset.deleteMode==='all'?'书籍和相关记录已移入回收记录':'已从书库隐藏，阅读记录仍保留')}catch(error){state=before;if(dbMode&&choice.dataset.deleteMode==='all'){try{const rows=await window.yuejiGetHighlightTrash(key);await window.yuejiPutHighlights(rows);await window.yuejiDeleteHighlightTrash(key)}catch{}}renderAll();toast('保存失败，书籍和记录没有删除')}
+  function installDelete() {
+    const saveBtn = q('#saveBook');
+    if (!saveBtn || q('#deleteBook')) return;
+    const btn = document.createElement('button');
+    btn.id = 'deleteBook';
+    btn.className = 'soft-btn';
+    btn.textContent = '移出或删除图书';
+    btn.style.cssText = 'width:100%;margin-top:10px;color:#a64f4f';
+    saveBtn.after(btn);
+    const d = document.createElement('div');
+    d.id = 'deleteBookDialog';
+    d.className = 'feature-dialog';
+    d.innerHTML = `<div class="feature-panel" style="max-width:520px"><div class="feature-panel-head"><b>处理这本书</b><button class="soft-btn" data-close-delete>取消</button></div><div class="delete-options"><button class="soft-btn" data-delete-mode="hide"><b>只从书库隐藏</b><small>保留进度、阅读统计和书摘；微信读书再次同步也不会把它恢复到书库列表。</small></button><button class="danger-btn" data-delete-mode="all"><b>删除书籍和相关记录</b><small>删除进度、逐日记录、书摘与感悟，并保留一份可恢复的回收记录。</small></button></div></div>`;
+    document.body.appendChild(d);
+    const close = () => d.classList.remove('show');
+    d.onclick = (e) => {
+      if (e.target === d || e.target.closest('[data-close-delete]')) close();
     };
-    const settings=q('#settingsSheet .settings-section:last-of-type')||q('#settingsSheet');const box=document.createElement('div');box.className='settings-section';box.id='bookTrashSettings';box.innerHTML='<h4>删除与恢复</h4><div id="bookTrashRestore"></div>';settings.after?settings.after(box):q('#settingsSheet').appendChild(box);updateRestore();
+    btn.onclick = () => {
+      closeSheets();
+      d.classList.add('show');
+    };
+    d.querySelector('.delete-options').onclick = async (e) => {
+      const choice = e.target.closest('[data-delete-mode]');
+      if (!choice) return;
+      try {
+        if (window.yuejiHighlightsReady) await window.yuejiHighlightsReady;
+      } catch {}
+      const key = q('#bookKey').value,
+        b = state.books.find((x) => x.key === key);
+      if (!b) return close();
+      const before = structuredClone(state),
+        dbMode = window.yuejiHighlightsDbReady?.(),
+        dbHighlights = dbMode ? [] : (state.highlights || []).filter((x) => x.bookKey === key),
+        discardedTrashKeys = [];
+      state.bookTrash = Array.isArray(state.bookTrash) ? state.bookTrash : [];
+      state.hiddenWeReadBookIds = Array.isArray(state.hiddenWeReadBookIds)
+        ? state.hiddenWeReadBookIds
+        : [];
+      if (choice.dataset.deleteMode === 'hide') {
+        b.hidden = true;
+        if (b.weReadBookId && !state.hiddenWeReadBookIds.includes(String(b.weReadBookId)))
+          state.hiddenWeReadBookIds.push(String(b.weReadBookId));
+      } else {
+        const sessions = state.sessions.filter((x) => x.bookKey === key),
+          journals = Object.entries(state.journals || {}).filter(([, x]) => x.bookKey === key);
+        state.bookTrash.unshift({
+          book: structuredClone(b),
+          sessions: structuredClone(sessions),
+          highlights: dbMode ? [] : structuredClone(dbHighlights),
+          highlightsInDb: Boolean(dbMode),
+          journals: structuredClone(journals),
+          deletedAt: Date.now(),
+        });
+        state.bookTrash.slice(20).forEach((item) => {
+          if (item?.book?.key) discardedTrashKeys.push(item.book.key);
+        });
+        state.bookTrash = state.bookTrash.slice(0, 20);
+        if (b.weReadBookId && !state.hiddenWeReadBookIds.includes(String(b.weReadBookId)))
+          state.hiddenWeReadBookIds.push(String(b.weReadBookId));
+        state.books = state.books.filter((x) => x.key !== key);
+        state.sessions = state.sessions.filter((x) => x.bookKey !== key);
+        state.highlights = (state.highlights || []).filter((x) => x.bookKey !== key);
+        for (const [k] of journals) delete state.journals[k];
+      }
+      try {
+        if (dbMode && choice.dataset.deleteMode === 'all')
+          await window.yuejiMoveHighlightsToTrash(key);
+        if (choice.dataset.deleteMode === 'all')
+          await window.yuejiDeleteWeReadSyncBook?.(b.weReadBookId);
+        save();
+        for (const oldKey of discardedTrashKeys) {
+          if (dbMode)
+            try {
+              await window.yuejiDeleteHighlightTrash(oldKey);
+            } catch {}
+          try {
+            await window.yuejiDeleteCover?.(oldKey);
+          } catch {}
+        }
+        renderAll();
+        close();
+        updateRestore();
+        updateHiddenBooks();
+        toast(
+          choice.dataset.deleteMode === 'all'
+            ? '书籍和相关记录已移入回收记录'
+            : '已从书库隐藏，阅读记录仍保留',
+        );
+      } catch (error) {
+        state = before;
+        if (dbMode && choice.dataset.deleteMode === 'all') {
+          try {
+            const rows = await window.yuejiGetHighlightTrash(key);
+            await window.yuejiPutHighlights(rows);
+            await window.yuejiDeleteHighlightTrash(key);
+          } catch {}
+        }
+        renderAll();
+        toast('保存失败，书籍和记录没有删除');
+      }
+    };
+    const settings = q('#settingsSheet .settings-section:last-of-type') || q('#settingsSheet');
+    const box = document.createElement('div');
+    box.className = 'settings-section';
+    box.id = 'bookTrashSettings';
+    box.innerHTML = '<h4>删除与恢复</h4><div id="bookTrashRestore"></div>';
+    settings.after ? settings.after(box) : q('#settingsSheet').appendChild(box);
+    updateRestore();
   }
-  function sessionIdentity(x){return x.id?`id:${x.id}`:`row:${x.source||''}|${x.date||''}|${x.bookKey||''}|${+x.minutes||0}|${+x.seconds||0}|${+x.words||0}`}
-  function updateRestore(){const el=q('#bookTrashRestore');if(!el)return;const t=state.bookTrash?.[0];el.innerHTML=t?`<div class="restore-row"><span><b>${esc2(t.book?.title||'未命名')}</b><small style="display:block;color:var(--muted)">最近删除，可恢复书籍及相关记录</small></span><button class="soft-btn" id="restoreLastBook">恢复</button></div>`:'<div class="section-sub">回收记录为空。</div>';q('#restoreLastBook')?.addEventListener('click',async()=>{try{if(window.yuejiHighlightsReady)await window.yuejiHighlightsReady}catch{}const before=structuredClone(state),item=state.bookTrash.shift();if(!item)return;let restoredHighlights=[];try{restoredHighlights=item.highlightsInDb&&window.yuejiHighlightsDbReady?.()?await window.yuejiGetHighlightTrash(item.book.key):(item.highlights||[]);if(!state.books.some(x=>x.key===item.book.key))state.books.push(item.book);const existingSessions=new Set(state.sessions.map(sessionIdentity));state.sessions.push(...item.sessions.filter(x=>{const id=sessionIdentity(x);if(existingSessions.has(id))return false;existingSessions.add(id);return true}));if(window.yuejiHighlightsDbReady?.())await window.yuejiPutHighlights(restoredHighlights);else state.highlights.push(...restoredHighlights.filter(x=>!state.highlights.some(y=>y.id===x.id)));for(const [k,v] of item.journals)state.journals[k]=v;if(item.book.weReadBookId)state.hiddenWeReadBookIds=(state.hiddenWeReadBookIds||[]).filter(x=>String(x)!==String(item.book.weReadBookId));if(window.yuejiPersistExternalState)await window.yuejiPersistExternalState(state);save();if(window.yuejiHighlightsDbReady?.())await window.yuejiDeleteHighlightTrash(item.book.key);renderAll();updateRestore();toast('书籍和记录已恢复')}catch(error){state=before;if(window.yuejiHighlightsDbReady?.()&&restoredHighlights.length){try{await window.yuejiDeleteHighlightsByBook(item.book.key)}catch{}try{await window.yuejiPutHighlightTrash(item.book.key,restoredHighlights)}catch{}}try{save()}catch{}renderAll();updateRestore();toast('恢复失败，原有数据没有变化')}})}
-  function updateHiddenBooks(){const el=q('#hiddenBookRestore');if(!el)return;const hidden=state.books.filter(b=>b.hidden);el.innerHTML=hidden.length?hidden.map(b=>`<div class="restore-row"><span><b>${esc2(b.title||'未命名')}</b><small style="display:block;color:var(--muted)">仍保留阅读记录</small></span><button class="soft-btn" data-unhide-book="${esc2(b.key)}">重新显示</button></div>`).join(''):'<div class="section-sub">没有隐藏的书籍。</div>';el.onclick=e=>{const button=e.target.closest('[data-unhide-book]');if(!button)return;const b=state.books.find(x=>x.key===button.dataset.unhideBook);if(!b)return;b.hidden=false;if(b.weReadBookId)state.hiddenWeReadBookIds=(state.hiddenWeReadBookIds||[]).filter(x=>String(x)!==String(b.weReadBookId));save();renderAll();updateHiddenBooks();toast('书籍已重新显示')}}
-  function installHiddenManager(){const host=q('#bookTrashSettings');if(!host||q('#hiddenBookRestore'))return;host.insertAdjacentHTML('beforeend','<h4 style="margin-top:18px">隐藏的书籍</h4><div id="hiddenBookRestore"></div>');updateHiddenBooks()}
+  function sessionIdentity(x) {
+    return x.id
+      ? `id:${x.id}`
+      : `row:${x.source || ''}|${x.date || ''}|${x.bookKey || ''}|${+x.minutes || 0}|${+x.seconds || 0}|${+x.words || 0}`;
+  }
+  function updateRestore() {
+    const el = q('#bookTrashRestore');
+    if (!el) return;
+    const t = state.bookTrash?.[0];
+    el.innerHTML = t
+      ? `<div class="restore-row"><span><b>${esc2(t.book?.title || '未命名')}</b><small style="display:block;color:var(--muted)">最近删除，可恢复书籍及相关记录</small></span><button class="soft-btn" id="restoreLastBook">恢复</button></div>`
+      : '<div class="section-sub">回收记录为空。</div>';
+    q('#restoreLastBook')?.addEventListener('click', async () => {
+      try {
+        if (window.yuejiHighlightsReady) await window.yuejiHighlightsReady;
+      } catch {}
+      const before = structuredClone(state),
+        item = state.bookTrash.shift();
+      if (!item) return;
+      let restoredHighlights = [];
+      try {
+        restoredHighlights =
+          item.highlightsInDb && window.yuejiHighlightsDbReady?.()
+            ? await window.yuejiGetHighlightTrash(item.book.key)
+            : item.highlights || [];
+        if (!state.books.some((x) => x.key === item.book.key)) state.books.push(item.book);
+        const existingSessions = new Set(state.sessions.map(sessionIdentity));
+        state.sessions.push(
+          ...item.sessions.filter((x) => {
+            const id = sessionIdentity(x);
+            if (existingSessions.has(id)) return false;
+            existingSessions.add(id);
+            return true;
+          }),
+        );
+        if (window.yuejiHighlightsDbReady?.()) await window.yuejiPutHighlights(restoredHighlights);
+        else
+          state.highlights.push(
+            ...restoredHighlights.filter((x) => !state.highlights.some((y) => y.id === x.id)),
+          );
+        for (const [k, v] of item.journals) state.journals[k] = v;
+        if (item.book.weReadBookId)
+          state.hiddenWeReadBookIds = (state.hiddenWeReadBookIds || []).filter(
+            (x) => String(x) !== String(item.book.weReadBookId),
+          );
+        if (window.yuejiPersistExternalState) await window.yuejiPersistExternalState(state);
+        save();
+        if (window.yuejiHighlightsDbReady?.())
+          await window.yuejiDeleteHighlightTrash(item.book.key);
+        renderAll();
+        updateRestore();
+        toast('书籍和记录已恢复');
+      } catch (error) {
+        state = before;
+        if (window.yuejiHighlightsDbReady?.() && restoredHighlights.length) {
+          try {
+            await window.yuejiDeleteHighlightsByBook(item.book.key);
+          } catch {}
+          try {
+            await window.yuejiPutHighlightTrash(item.book.key, restoredHighlights);
+          } catch {}
+        }
+        try {
+          save();
+        } catch {}
+        renderAll();
+        updateRestore();
+        toast('恢复失败，原有数据没有变化');
+      }
+    });
+  }
+  function updateHiddenBooks() {
+    const el = q('#hiddenBookRestore');
+    if (!el) return;
+    const hidden = state.books.filter((b) => b.hidden);
+    el.innerHTML = hidden.length
+      ? hidden
+          .map(
+            (b) =>
+              `<div class="restore-row"><span><b>${esc2(b.title || '未命名')}</b><small style="display:block;color:var(--muted)">仍保留阅读记录</small></span><button class="soft-btn" data-unhide-book="${esc2(b.key)}">重新显示</button></div>`,
+          )
+          .join('')
+      : '<div class="section-sub">没有隐藏的书籍。</div>';
+    el.onclick = (e) => {
+      const button = e.target.closest('[data-unhide-book]');
+      if (!button) return;
+      const b = state.books.find((x) => x.key === button.dataset.unhideBook);
+      if (!b) return;
+      b.hidden = false;
+      if (b.weReadBookId)
+        state.hiddenWeReadBookIds = (state.hiddenWeReadBookIds || []).filter(
+          (x) => String(x) !== String(b.weReadBookId),
+        );
+      save();
+      renderAll();
+      updateHiddenBooks();
+      toast('书籍已重新显示');
+    };
+  }
+  function installHiddenManager() {
+    const host = q('#bookTrashSettings');
+    if (!host || q('#hiddenBookRestore')) return;
+    host.insertAdjacentHTML(
+      'beforeend',
+      '<h4 style="margin-top:18px">隐藏的书籍</h4><div id="hiddenBookRestore"></div>',
+    );
+    updateHiddenBooks();
+  }
 
-  function duplicateToken(a,b){return[a.key,b.key].map(String).sort().join('|')}
-  function looseTitle(value){return String(value||'').normalize('NFKC').toLowerCase().replace(/\.(epub|mobi|azw3?|pdf|txt|cbz|cbr)$/i,'').replace(/[（(【\[].*?[）)】\]]/g,'').replace(/名著名译丛书|精装|插图版|珍藏版|修订版|新版|完整版|典藏版/g,'').replace(/[\s·•:：,，.。'"“”‘’《》〈〉()（）\[\]【】_-]+/g,'')}
-  function isUnmergedSourceBook(b,source){const sources=new Set(b?.sources||[]),other=source==='moon'?'weread':'moon';return!b?.hidden&&sources.has(source)&&!sources.has(other)}
-  function isCrossSourcePair(a,b){return isUnmergedSourceBook(a,'moon')&&isUnmergedSourceBook(b,'weread')||isUnmergedSourceBook(a,'weread')&&isUnmergedSourceBook(b,'moon')}
-  function isMergeCandidate(a,b){if(!isCrossSourcePair(a,b))return false;const at=looseTitle(a.title||a.file),bt=looseTitle(b.title||b.file),aa=looseTitle(a.author).replace(/著|编|译|作者/g,''),ba=looseTitle(b.author).replace(/著|编|译|作者/g,'');return at.length>=2&&at===bt&&(!aa||!ba||aa===ba)}
-  function suspectedDuplicatePairs(){const ignored=new Set(state.distinctBookPairs||[]),pairs=[];for(let i=0;i<state.books.length;i++)for(let j=i+1;j<state.books.length;j++){const a=state.books[i],b=state.books[j];if(!ignored.has(duplicateToken(a,b))&&isMergeCandidate(a,b))pairs.push([a,b])}return pairs}
-  function mergedSourceBooks(){return state.books.filter(b=>!b.hidden&&b.sources?.includes('weread')&&b.sources?.includes('moon'))}
-  function scrollSettingsTo(target,behavior='auto'){const sheet=q('#settingsSheet');if(!sheet||!target)return;const top=target.getBoundingClientRect().top-sheet.getBoundingClientRect().top+sheet.scrollTop-82;sheet.scrollTo({top:Math.max(0,top),behavior})}
-  function refreshAfterMerge(){renderBookOptions();if(page==='library')renderLibrary();else if(page==='analytics'){renderAnalytics();window.yuejiRenderEvolution?.()}else if(page==='monthly'){renderMonthly();(window.renderYearWall||renderYearWall)()}else if(page==='today')renderToday()}
-  async function runMerge(a,b,button,manual=false){const first=state.books.find(x=>x.key===a),second=state.books.find(x=>x.key===b);if(!first||!second)return;if(!isCrossSourcePair(first,second)){toast('只能合并一条微信读书记录和一条静读天下记录');return}const exact=isMergeCandidate(first,second),message=exact?`确定合并《${first.title}》的两条重复记录吗？阅读记录、书摘和来源会归到同一份档案。`:`系统无法确认它们是同一本书。\n\n微信读书：《${first.title}》${first.author?` · ${first.author}`:''}\n静读天下：《${second.title}》${second.author?` · ${second.author}`:''}\n\n请仅在你确认是同一本书时继续。`;if(!exact&&!manual){toast('书名或作者不一致，请使用下方手动选择核对');return}if(!confirm(message))return;const documentTop=document.scrollingElement?.scrollTop||0,oldText=button.textContent;button.disabled=true;button.textContent='正在合并';try{await window.yuejiMergeConfirmedBookPair(a,b);updateDuplicateBooks();refreshAfterMerge();requestAnimationFrame(()=>{if(document.scrollingElement)document.scrollingElement.scrollTop=documentTop;scrollSettingsTo(q('#duplicateBookReview'))});toast('同一本书的两条档案已合并')}catch(error){toast('合并失败，原有数据已经保留')}finally{button.disabled=false;button.textContent=oldText}}
-  function mergeSelectOptions(source){return state.books.filter(b=>isUnmergedSourceBook(b,source)).map(b=>`<option value="${esc2(b.key)}">${esc2(b.title||'未命名')} · ${esc2(b.author||'作者待补充')}</option>`).join('')}
-  function updateDuplicateBooks(){const el=q('#duplicateBookReview');if(!el)return;const pairs=suspectedDuplicatePairs(),merged=mergedSourceBooks(),wereadOptions=mergeSelectOptions('weread'),moonOptions=mergeSelectOptions('moon');el.innerHTML=`<div class="section-sub">这里只会建议可能相同的书，系统不会再自动跨来源合并。选择框列出尚未合并的微信读书与静读天下档案。</div><div class="manual-merge-box"><select id="mergeWeReadBook" aria-label="微信读书书籍"><option value="">选择微信读书书籍（${state.books.filter(b=>isUnmergedSourceBook(b,'weread')).length} 本）</option>${wereadOptions}</select><select id="mergeMoonBook" aria-label="静读天下书籍"><option value="">选择静读天下书籍（${state.books.filter(b=>isUnmergedSourceBook(b,'moon')).length} 本）</option>${moonOptions}</select><button class="primary-btn" id="mergeSelectedBooks" ${!wereadOptions||!moonOptions?'disabled':''}>合并所选同一本</button></div><div id="suspectedDuplicateList">${pairs.length?pairs.map(([a,b])=>`<div class="duplicate-pair"><span><b>${esc2(a.title||'未命名')}</b><small>${esc2(a.author||'作者待补充')} · ${esc2((a.sources||[]).join(' + '))}</small><b style="display:block;margin-top:8px">${esc2(b.title||'未命名')}</b><small>${esc2(b.author||'作者待补充')} · ${esc2((b.sources||[]).join(' + '))}</small></span><div class="duplicate-actions"><button class="soft-btn" data-merge-pair="${esc2(a.key)}|${esc2(b.key)}">确认是同一本</button><button class="soft-btn" data-distinct-pair="${esc2(a.key)}|${esc2(b.key)}">不是同一本</button></div></div>`).join(''):'<div class="section-sub" style="margin-top:12px">目前没有系统发现的同书候选；仍可使用上方两个选择框手动核对。</div>'}</div><div class="merged-book-list" id="mergedBookList"><h5>已经合并 · ${merged.length} 本</h5>${merged.length?merged.map(b=>`<div class="merged-book-row"><span><b>${esc2(b.title||'未命名')}</b><small>微信读书 + 静读天下；解除后会重新出现在两个选择框中</small></span><button class="soft-btn" data-split-book="${esc2(b.key)}">解除合并</button></div>`).join(''):'<div class="section-sub">还没有已经合并的跨来源书籍。</div>'}</div>`;q('#mergeSelectedBooks',el)?.addEventListener('click',e=>{const a=q('#mergeWeReadBook',el).value,b=q('#mergeMoonBook',el).value;if(!a||!b)return toast('请分别选择微信读书和静读天下中的一本书');runMerge(a,b,e.currentTarget,true)});q('#suspectedDuplicateList',el).onclick=async e=>{const merge=e.target.closest('[data-merge-pair]'),distinct=e.target.closest('[data-distinct-pair]'),value=(merge?.dataset.mergePair||distinct?.dataset.distinctPair||''),split=value.indexOf('|'),a=value.slice(0,split),b=value.slice(split+1);if(!a||!b)return;if(distinct){state.distinctBookPairs=[...new Set([...(state.distinctBookPairs||[]),duplicateToken({key:a},{key:b})])];save();updateDuplicateBooks();return}await runMerge(a,b,merge)};q('#mergedBookList',el).onclick=async e=>{const button=e.target.closest('[data-split-book]');if(!button)return;if(!confirm('确定解除这本书的跨来源合并吗？微信读书与静读天下会恢复为两条独立档案，原阅读记录不会删除。'))return;button.disabled=true;button.textContent='正在解除';try{await window.yuejiSplitMergedBook?.(button.dataset.splitBook);updateDuplicateBooks();refreshAfterMerge();toast('已解除合并，两条档案已经恢复')}catch(error){toast('解除失败，原有数据已经保留')}finally{button.disabled=false}}}
-  function installDuplicateManager(){const host=q('#bookTrashSettings');if(!host)return;if(!q('#duplicateBookReview'))host.insertAdjacentHTML('beforeend','<h4 style="margin-top:18px">合并重复条目</h4><div class="section-sub">只处理同一本书在微信读书与静读天下中的重复档案。</div><div id="duplicateBookReview"><div class="section-sub" style="margin-top:12px">打开设置后加载重复书籍。</div></div>');if(!q('#mergeBooksShortcut')){const shortcut=document.createElement('button');shortcut.id='mergeBooksShortcut';shortcut.className='soft-btn';shortcut.textContent='合并重复条目';shortcut.onclick=()=>{q('#settingsBtn')?.click();updateDuplicateBooks();setTimeout(()=>scrollSettingsTo(q('#duplicateBookReview'),'smooth'),180)};q('#libraryViewSeg')?.before(shortcut)}q('#settingsBtn')?.addEventListener('click',()=>requestAnimationFrame(updateDuplicateBooks))}
-  window.yuejiUpdateDuplicateBooks=updateDuplicateBooks;
+  function duplicateToken(a, b) {
+    return [a.key, b.key].map(String).sort().join('|');
+  }
+  function looseTitle(value) {
+    return String(value || '')
+      .normalize('NFKC')
+      .toLowerCase()
+      .replace(/\.(epub|mobi|azw3?|pdf|txt|cbz|cbr)$/i, '')
+      .replace(/[（(【\[].*?[）)】\]]/g, '')
+      .replace(/名著名译丛书|精装|插图版|珍藏版|修订版|新版|完整版|典藏版/g, '')
+      .replace(/[\s·•:：,，.。'"“”‘’《》〈〉()（）\[\]【】_-]+/g, '');
+  }
+  function isUnmergedSourceBook(b, source) {
+    const sources = new Set(b?.sources || []),
+      other = source === 'moon' ? 'weread' : 'moon';
+    return !b?.hidden && sources.has(source) && !sources.has(other);
+  }
+  function isCrossSourcePair(a, b) {
+    return (
+      (isUnmergedSourceBook(a, 'moon') && isUnmergedSourceBook(b, 'weread')) ||
+      (isUnmergedSourceBook(a, 'weread') && isUnmergedSourceBook(b, 'moon'))
+    );
+  }
+  function isMergeCandidate(a, b) {
+    if (!isCrossSourcePair(a, b)) return false;
+    const at = looseTitle(a.title || a.file),
+      bt = looseTitle(b.title || b.file),
+      aa = looseTitle(a.author).replace(/著|编|译|作者/g, ''),
+      ba = looseTitle(b.author).replace(/著|编|译|作者/g, '');
+    return at.length >= 2 && at === bt && (!aa || !ba || aa === ba);
+  }
+  function suspectedDuplicatePairs() {
+    const ignored = new Set(state.distinctBookPairs || []),
+      pairs = [];
+    for (let i = 0; i < state.books.length; i++)
+      for (let j = i + 1; j < state.books.length; j++) {
+        const a = state.books[i],
+          b = state.books[j];
+        if (!ignored.has(duplicateToken(a, b)) && isMergeCandidate(a, b)) pairs.push([a, b]);
+      }
+    return pairs;
+  }
+  function mergedSourceBooks() {
+    return state.books.filter(
+      (b) => !b.hidden && b.sources?.includes('weread') && b.sources?.includes('moon'),
+    );
+  }
+  function scrollSettingsTo(target, behavior = 'auto') {
+    const sheet = q('#settingsSheet');
+    if (!sheet || !target) return;
+    const top =
+      target.getBoundingClientRect().top - sheet.getBoundingClientRect().top + sheet.scrollTop - 82;
+    sheet.scrollTo({ top: Math.max(0, top), behavior });
+  }
+  function refreshAfterMerge() {
+    renderBookOptions();
+    if (page === 'library') renderLibrary();
+    else if (page === 'analytics') {
+      renderAnalytics();
+    } else if (page === 'monthly') {
+      renderMonthly();
+      (window.renderYearWall || renderYearWall)();
+    } else if (page === 'today') renderToday();
+  }
+  async function runMerge(a, b, button, manual = false) {
+    const first = state.books.find((x) => x.key === a),
+      second = state.books.find((x) => x.key === b);
+    if (!first || !second) return;
+    if (!isCrossSourcePair(first, second)) {
+      toast('只能合并一条微信读书记录和一条静读天下记录');
+      return;
+    }
+    const exact = isMergeCandidate(first, second),
+      message = exact
+        ? `确定合并《${first.title}》的两条重复记录吗？阅读记录、书摘和来源会归到同一份档案。`
+        : `系统无法确认它们是同一本书。\n\n微信读书：《${first.title}》${first.author ? ` · ${first.author}` : ''}\n静读天下：《${second.title}》${second.author ? ` · ${second.author}` : ''}\n\n请仅在你确认是同一本书时继续。`;
+    if (!exact && !manual) {
+      toast('书名或作者不一致，请使用下方手动选择核对');
+      return;
+    }
+    if (!confirm(message)) return;
+    const documentTop = document.scrollingElement?.scrollTop || 0,
+      oldText = button.textContent;
+    button.disabled = true;
+    button.textContent = '正在合并';
+    try {
+      await window.yuejiMergeConfirmedBookPair(a, b);
+      updateDuplicateBooks();
+      refreshAfterMerge();
+      requestAnimationFrame(() => {
+        if (document.scrollingElement) document.scrollingElement.scrollTop = documentTop;
+        scrollSettingsTo(q('#duplicateBookReview'));
+      });
+      toast('同一本书的两条档案已合并');
+    } catch (error) {
+      toast('合并失败，原有数据已经保留');
+    } finally {
+      button.disabled = false;
+      button.textContent = oldText;
+    }
+  }
+  function mergeSelectOptions(source) {
+    return state.books
+      .filter((b) => isUnmergedSourceBook(b, source))
+      .map(
+        (b) =>
+          `<option value="${esc2(b.key)}">${esc2(b.title || '未命名')} · ${esc2(b.author || '作者待补充')}</option>`,
+      )
+      .join('');
+  }
+  function updateDuplicateBooks() {
+    const el = q('#duplicateBookReview');
+    if (!el) return;
+    const pairs = suspectedDuplicatePairs(),
+      merged = mergedSourceBooks(),
+      wereadOptions = mergeSelectOptions('weread'),
+      moonOptions = mergeSelectOptions('moon');
+    el.innerHTML = `<div class="section-sub">这里只会建议可能相同的书，系统不会再自动跨来源合并。选择框列出尚未合并的微信读书与静读天下档案。</div><div class="manual-merge-box"><select id="mergeWeReadBook" aria-label="微信读书书籍"><option value="">选择微信读书书籍（${state.books.filter((b) => isUnmergedSourceBook(b, 'weread')).length} 本）</option>${wereadOptions}</select><select id="mergeMoonBook" aria-label="静读天下书籍"><option value="">选择静读天下书籍（${state.books.filter((b) => isUnmergedSourceBook(b, 'moon')).length} 本）</option>${moonOptions}</select><button class="primary-btn" id="mergeSelectedBooks" ${!wereadOptions || !moonOptions ? 'disabled' : ''}>合并所选同一本</button></div><div id="suspectedDuplicateList">${pairs.length ? pairs.map(([a, b]) => `<div class="duplicate-pair"><span><b>${esc2(a.title || '未命名')}</b><small>${esc2(a.author || '作者待补充')} · ${esc2((a.sources || []).join(' + '))}</small><b style="display:block;margin-top:8px">${esc2(b.title || '未命名')}</b><small>${esc2(b.author || '作者待补充')} · ${esc2((b.sources || []).join(' + '))}</small></span><div class="duplicate-actions"><button class="soft-btn" data-merge-pair="${esc2(a.key)}|${esc2(b.key)}">确认是同一本</button><button class="soft-btn" data-distinct-pair="${esc2(a.key)}|${esc2(b.key)}">不是同一本</button></div></div>`).join('') : '<div class="section-sub" style="margin-top:12px">目前没有系统发现的同书候选；仍可使用上方两个选择框手动核对。</div>'}</div><div class="merged-book-list" id="mergedBookList"><h5>已经合并 · ${merged.length} 本</h5>${merged.length ? merged.map((b) => `<div class="merged-book-row"><span><b>${esc2(b.title || '未命名')}</b><small>微信读书 + 静读天下；解除后会重新出现在两个选择框中</small></span><button class="soft-btn" data-split-book="${esc2(b.key)}">解除合并</button></div>`).join('') : '<div class="section-sub">还没有已经合并的跨来源书籍。</div>'}</div>`;
+    q('#mergeSelectedBooks', el)?.addEventListener('click', (e) => {
+      const a = q('#mergeWeReadBook', el).value,
+        b = q('#mergeMoonBook', el).value;
+      if (!a || !b) return toast('请分别选择微信读书和静读天下中的一本书');
+      runMerge(a, b, e.currentTarget, true);
+    });
+    q('#suspectedDuplicateList', el).onclick = async (e) => {
+      const merge = e.target.closest('[data-merge-pair]'),
+        distinct = e.target.closest('[data-distinct-pair]'),
+        value = merge?.dataset.mergePair || distinct?.dataset.distinctPair || '',
+        split = value.indexOf('|'),
+        a = value.slice(0, split),
+        b = value.slice(split + 1);
+      if (!a || !b) return;
+      if (distinct) {
+        state.distinctBookPairs = [
+          ...new Set([...(state.distinctBookPairs || []), duplicateToken({ key: a }, { key: b })]),
+        ];
+        save();
+        updateDuplicateBooks();
+        return;
+      }
+      await runMerge(a, b, merge);
+    };
+    q('#mergedBookList', el).onclick = async (e) => {
+      const button = e.target.closest('[data-split-book]');
+      if (!button) return;
+      if (
+        !confirm(
+          '确定解除这本书的跨来源合并吗？微信读书与静读天下会恢复为两条独立档案，原阅读记录不会删除。',
+        )
+      )
+        return;
+      button.disabled = true;
+      button.textContent = '正在解除';
+      try {
+        await window.yuejiSplitMergedBook?.(button.dataset.splitBook);
+        updateDuplicateBooks();
+        refreshAfterMerge();
+        toast('已解除合并，两条档案已经恢复');
+      } catch (error) {
+        toast('解除失败，原有数据已经保留');
+      } finally {
+        button.disabled = false;
+      }
+    };
+  }
+  function installDuplicateManager() {
+    const host = q('#bookTrashSettings');
+    if (!host) return;
+    if (!q('#duplicateBookReview'))
+      host.insertAdjacentHTML(
+        'beforeend',
+        '<h4 style="margin-top:18px">合并重复条目</h4><div class="section-sub">只处理同一本书在微信读书与静读天下中的重复档案。</div><div id="duplicateBookReview"><div class="section-sub" style="margin-top:12px">打开设置后加载重复书籍。</div></div>',
+      );
+    if (!q('#mergeBooksShortcut')) {
+      const shortcut = document.createElement('button');
+      shortcut.id = 'mergeBooksShortcut';
+      shortcut.className = 'soft-btn';
+      shortcut.textContent = '合并重复条目';
+      shortcut.onclick = () => {
+        q('#settingsBtn')?.click();
+        updateDuplicateBooks();
+        setTimeout(() => scrollSettingsTo(q('#duplicateBookReview'), 'smooth'), 180);
+      };
+      q('#libraryViewSeg')?.before(shortcut);
+    }
+    q('#settingsBtn')?.addEventListener('click', () => requestAnimationFrame(updateDuplicateBooks));
+  }
+  window.yuejiUpdateDuplicateBooks = updateDuplicateBooks;
 
-  function installP1Diagnostics(){if(window.__yuejiP1Diagnostics||typeof buildDiagnostics!=='function')return;window.__yuejiP1Diagnostics=true;const base=buildDiagnostics;buildDiagnostics=async()=>{const result=await base(),lines=result.text.split('\n');if(lines.at(-1)?.startsWith('结论：'))lines.pop();const norm=value=>String(value||'').normalize('NFKC').toLowerCase().replace(/[\s·•:：,，.。'"“”‘’《》〈〉()（）\[\]【】_-]+/g,''),groups=new Map(),bookKeys=new Set(state.books.map(b=>String(b.key)));for(const b of state.books){const id=`${norm(b.title)}|${norm(b.author)}`;if(!norm(b.title))continue;const rows=groups.get(id)||[];rows.push(b);groups.set(id,rows)}const duplicateTokens=new Set();[...groups.values()].filter(rows=>rows.length>1).forEach(rows=>duplicateTokens.add(rows.map(b=>b.key).sort().join('|')));for(let i=0;i<state.books.length;i++)for(let j=i+1;j<state.books.length;j++)if(window.yuejiCrossSourceMatch?.(state.books[i],state.books[j]))duplicateTokens.add(duplicateToken(state.books[i],state.books[j]));const duplicateGroups=duplicateTokens.size,orphanSessions=state.sessions.filter(s=>s.bookKey&&!bookKeys.has(String(s.bookKey))).length,orphanJournals=Object.values(state.journals||{}).filter(j=>j.bookKey&&!bookKeys.has(String(j.bookKey))).length,snapshots=state.books.reduce((sum,b)=>sum+(b.weReadSnapshots?.length||0),0),hidden=state.books.filter(b=>b.hidden).length,coverState=window.yuejiCoverFetchStatus?.()||{queued:0,pending:0,failed:[]};lines.push(`微信进度快照：${snapshots} 条`,`隐藏书籍：${hidden} 本`,`疑似重复书籍组：${duplicateGroups} 组`,`孤立阅读记录：${orphanSessions} 条`,`孤立手记：${orphanJournals} 条`,`封面队列：等待 ${coverState.queued||0} / 处理中 ${coverState.pending||0} / 本次失败 ${coverState.failed?.length||0}`);let level=result.level;if((duplicateGroups||orphanSessions||orphanJournals)&&level==='ok')level='warn';lines.push(level==='ok'?'结论：书库关系、进度快照和封面队列正常。':level==='warn'?'结论：发现需要核对的书库关系或本地储存项目，请先保留备份。':'结论：数据库不可用或读取失败，请勿清理网站数据。');return{level,text:lines.join('\n')}}}
+  function installP1Diagnostics() {
+    if (window.__yuejiP1Diagnostics || typeof buildDiagnostics !== 'function') return;
+    window.__yuejiP1Diagnostics = true;
+    const base = buildDiagnostics;
+    buildDiagnostics = async () => {
+      const result = await base(),
+        lines = result.text.split('\n');
+      if (lines.at(-1)?.startsWith('结论：')) lines.pop();
+      const norm = (value) =>
+          String(value || '')
+            .normalize('NFKC')
+            .toLowerCase()
+            .replace(/[\s·•:：,，.。'"“”‘’《》〈〉()（）\[\]【】_-]+/g, ''),
+        groups = new Map(),
+        bookKeys = new Set(state.books.map((b) => String(b.key)));
+      for (const b of state.books) {
+        const id = `${norm(b.title)}|${norm(b.author)}`;
+        if (!norm(b.title)) continue;
+        const rows = groups.get(id) || [];
+        rows.push(b);
+        groups.set(id, rows);
+      }
+      const duplicateTokens = new Set();
+      [...groups.values()]
+        .filter((rows) => rows.length > 1)
+        .forEach((rows) =>
+          duplicateTokens.add(
+            rows
+              .map((b) => b.key)
+              .sort()
+              .join('|'),
+          ),
+        );
+      for (let i = 0; i < state.books.length; i++)
+        for (let j = i + 1; j < state.books.length; j++)
+          if (window.yuejiCrossSourceMatch?.(state.books[i], state.books[j]))
+            duplicateTokens.add(duplicateToken(state.books[i], state.books[j]));
+      const duplicateGroups = duplicateTokens.size,
+        orphanSessions = state.sessions.filter(
+          (s) => s.bookKey && !bookKeys.has(String(s.bookKey)),
+        ).length,
+        orphanJournals = Object.values(state.journals || {}).filter(
+          (j) => j.bookKey && !bookKeys.has(String(j.bookKey)),
+        ).length,
+        snapshots = state.books.reduce((sum, b) => sum + (b.weReadSnapshots?.length || 0), 0),
+        hidden = state.books.filter((b) => b.hidden).length,
+        coverState = window.yuejiCoverFetchStatus?.() || { queued: 0, pending: 0, failed: [] };
+      lines.push(
+        `微信进度快照：${snapshots} 条`,
+        `隐藏书籍：${hidden} 本`,
+        `疑似重复书籍组：${duplicateGroups} 组`,
+        `孤立阅读记录：${orphanSessions} 条`,
+        `孤立手记：${orphanJournals} 条`,
+        `封面队列：等待 ${coverState.queued || 0} / 处理中 ${coverState.pending || 0} / 本次失败 ${coverState.failed?.length || 0}`,
+      );
+      let level = result.level;
+      if ((duplicateGroups || orphanSessions || orphanJournals) && level === 'ok') level = 'warn';
+      lines.push(
+        level === 'ok'
+          ? '结论：书库关系、进度快照和封面队列正常。'
+          : level === 'warn'
+            ? '结论：发现需要核对的书库关系或本地储存项目，请先保留备份。'
+            : '结论：数据库不可用或读取失败，请勿清理网站数据。',
+      );
+      return { level, text: lines.join('\n') };
+    };
+  }
 
-  const yearReportCache=new Map(),yearBaseCache=new Map(),yearCoverCache=new Map();let yearReportRenderVersion=0,yearCacheRevision=-1,yearChoices=[];
-  function cachedVerifiedDates(b){return window.yuejiVerifiedWeReadActivityDates?.(b)||[]}
-  function monthForReadBook(b,year,sessionMonths){const sums=sessionMonths.get(b.key)||{},best=Object.entries(sums).reduce((winner,row)=>!winner||row[1]>winner[1]?row:winner,null);if(best)return +best[0];const verified=cachedVerifiedDates(b).filter(d=>String(d).startsWith(year+'-')).at(-1),d=verified||b.finishedDate;return String(d||'').startsWith(year+'-')?+String(d).slice(5,7):0}
-  const stateRevisionIds=new WeakMap();let nextStateRevisionId=1;
-  function currentDataRevision(){if(!stateRevisionIds.has(state))stateRevisionIds.set(state,nextStateRevisionId++);return`${Number(window.yuejiDataRevision?.()??window.__yuejiDataRevision??0)}:${stateRevisionIds.get(state)}`}
-  function yearBase(year){let base=yearBaseCache.get(year);if(!base){base={sessions:[],sessionMonths:new Map(),journals:[],days:new Set()};yearBaseCache.set(year,base)}return base}
-  function ensureYearIndexes(){const revision=currentDataRevision();if(revision===yearCacheRevision)return;yearCacheRevision=revision;yearReportCache.clear();yearBaseCache.clear();yearCoverCache.clear();const years=new Set([new Date().getFullYear()]),validYear=date=>/^\d{4}-\d{2}-\d{2}$/.test(String(date||''))?+String(date).slice(0,4):0;for(const s of effectiveSessions()){const year=validYear(s.date);if(!year)continue;years.add(year);const base=yearBase(year);base.sessions.push(s);base.days.add(s.date)}for(const s of state.sessions||[]){const year=validYear(s.date);if(!year||!s.bookKey)continue;years.add(year);const base=yearBase(year),sums=base.sessionMonths.get(String(s.bookKey))||{},m=+String(s.date).slice(5,7);sums[m]=(sums[m]||0)+Math.max(1,+s.minutes||0);base.sessionMonths.set(String(s.bookKey),sums)}for(const j of Object.values(state.journals||{})){const year=validYear(j?.date);if(!year)continue;years.add(year);const base=yearBase(year);base.journals.push(j);if(j.read)base.days.add(j.date)}for(const b of state.books){const finished=validYear(b.finishedDate);if(finished)years.add(finished);for(const date of cachedVerifiedDates(b)){const year=validYear(date);if(year)years.add(year)}}yearChoices=[...years].filter(Number.isFinite).sort((a,b)=>b-a)}
-  function buildYearReport(year,mode){ensureYearIndexes();const cacheKey=`${year}|${mode}`,cached=yearReportCache.get(cacheKey);if(cached)return cached;const base=yearBase(year),months=Array.from({length:12},()=>[]);if(mode==='done')state.books.filter(b=>!b.hidden&&+b.progress>=99.95&&String(b.finishedDate||'').startsWith(String(year))).forEach(b=>months[+b.finishedDate.slice(5,7)-1].push(b));else state.books.filter(b=>!b.hidden).forEach(b=>{const m=monthForReadBook(b,year,base.sessionMonths);if(m)months[m-1].push(b)});if(mode==='read'){const bookMap=new Map(state.books.map(b=>[String(b.key),b]));for(const j of base.journals){if(!j?.read||!j.bookKey)continue;const b=bookMap.get(String(j.bookKey));if(!b||b.hidden||months.some(group=>group.includes(b)))continue;months[Math.max(0,+j.date.slice(5,7)-1)].push(b)}}const data={months,all:months.flat(),days:base.days.size,mins:base.sessions.reduce((a,s)=>a+(+s.minutes||0),0)};yearReportCache.set(cacheKey,data);return data}
-  function syncYearReportOptions(){const select=q('#yearWallYear');if(!select)return;ensureYearIndexes();const current=select.value,signature=yearChoices.join(',');if(select.dataset.years!==signature){select.innerHTML=yearChoices.map(y=>`<option value="${y}">${y}年</option>`).join('');select.dataset.years=signature;if(yearChoices.includes(+current))select.value=current}}
-  async function hydrateYearCovers(preview,version){const imgs=qa('img[data-cover-key]',preview),missing=[...new Set(imgs.map(img=>img.dataset.coverKey).filter(key=>key&&!yearCoverCache.has(key)))];if(missing.length){const rows=await getCovers(missing);if(version!==yearReportRenderVersion)return;for(const key of missing){const blob=rows.get(key);if(blob)yearCoverCache.set(key,blob)}}for(const img of imgs){if(version!==yearReportRenderVersion||!img.isConnected)return;const blob=yearCoverCache.get(img.dataset.coverKey);if(blob){const url=URL.createObjectURL(blob);img.onload=img.onerror=()=>URL.revokeObjectURL(url);img.src=url;img.closest('.cover-art')?.classList.add('has-image')}else queueRemoteCover(img)}}
-  async function renderYearReport(){
+  const yearReportCache = new Map(),
+    yearBaseCache = new Map(),
+    yearCoverCache = new Map(),
+    yearCoverUrlCache = new Map();
+  let yearReportRenderVersion = 0,
+    yearCacheRevision = -1,
+    yearChoices = [];
+  function cachedVerifiedDates(b) {
+    return window.yuejiVerifiedWeReadActivityDates?.(b) || [];
+  }
+  function monthForReadBook(b, year, sessionMonths) {
+    const sums = sessionMonths.get(b.key) || {},
+      best = Object.entries(sums).reduce(
+        (winner, row) => (!winner || row[1] > winner[1] ? row : winner),
+        null,
+      );
+    if (best) return +best[0];
+    const verified = cachedVerifiedDates(b)
+        .filter((d) => String(d).startsWith(year + '-'))
+        .at(-1),
+      d = verified || b.finishedDate;
+    return String(d || '').startsWith(year + '-') ? +String(d).slice(5, 7) : 0;
+  }
+  const stateRevisionIds = new WeakMap();
+  let nextStateRevisionId = 1;
+  function currentDataRevision() {
+    if (!stateRevisionIds.has(state)) stateRevisionIds.set(state, nextStateRevisionId++);
+    return `${Number(window.yuejiDataRevision?.() ?? window.__yuejiDataRevision ?? 0)}:${stateRevisionIds.get(state)}`;
+  }
+  function yearBase(year) {
+    let base = yearBaseCache.get(year);
+    if (!base) {
+      base = { sessions: [], sessionMonths: new Map(), journals: [], days: new Set() };
+      yearBaseCache.set(year, base);
+    }
+    return base;
+  }
+  function ensureYearIndexes() {
+    const revision = currentDataRevision();
+    if (revision === yearCacheRevision) return;
+    yearCacheRevision = revision;
+    yearReportCache.clear();
+    yearBaseCache.clear();
+    const years = new Set([new Date().getFullYear()]),
+      validYear = (date) =>
+        /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? +String(date).slice(0, 4) : 0;
+    for (const s of effectiveSessions()) {
+      const year = validYear(s.date);
+      if (!year) continue;
+      years.add(year);
+      const base = yearBase(year);
+      base.sessions.push(s);
+      base.days.add(s.date);
+    }
+    for (const s of state.sessions || []) {
+      const year = validYear(s.date);
+      if (!year || !s.bookKey) continue;
+      years.add(year);
+      const base = yearBase(year),
+        sums = base.sessionMonths.get(String(s.bookKey)) || {},
+        m = +String(s.date).slice(5, 7);
+      sums[m] = (sums[m] || 0) + Math.max(1, +s.minutes || 0);
+      base.sessionMonths.set(String(s.bookKey), sums);
+    }
+    for (const j of Object.values(state.journals || {})) {
+      const year = validYear(j?.date);
+      if (!year) continue;
+      years.add(year);
+      const base = yearBase(year);
+      base.journals.push(j);
+      if (j.read) base.days.add(j.date);
+    }
+    for (const b of state.books) {
+      const finished = validYear(b.finishedDate);
+      if (finished) years.add(finished);
+      for (const date of cachedVerifiedDates(b)) {
+        const year = validYear(date);
+        if (year) years.add(year);
+      }
+    }
+    yearChoices = [...years].filter(Number.isFinite).sort((a, b) => b - a);
+  }
+  function buildYearReport(year, mode) {
+    ensureYearIndexes();
+    const cacheKey = `${year}|${mode}`,
+      cached = yearReportCache.get(cacheKey);
+    if (cached) return cached;
+    const base = yearBase(year),
+      months = Array.from({ length: 12 }, () => []);
+    if (mode === 'done')
+      state.books
+        .filter(
+          (b) =>
+            !b.hidden &&
+            +b.progress >= 99.95 &&
+            String(b.finishedDate || '').startsWith(String(year)),
+        )
+        .forEach((b) => months[+b.finishedDate.slice(5, 7) - 1].push(b));
+    else
+      state.books
+        .filter((b) => !b.hidden)
+        .forEach((b) => {
+          const m = monthForReadBook(b, year, base.sessionMonths);
+          if (m) months[m - 1].push(b);
+        });
+    if (mode === 'read') {
+      const bookMap = new Map(state.books.map((b) => [String(b.key), b]));
+      for (const j of base.journals) {
+        if (!j?.read || !j.bookKey) continue;
+        const b = bookMap.get(String(j.bookKey));
+        if (!b || b.hidden || months.some((group) => group.includes(b))) continue;
+        months[Math.max(0, +j.date.slice(5, 7) - 1)].push(b);
+      }
+    }
+    const data = {
+      months,
+      all: months.flat(),
+      days: base.days.size,
+      mins: base.sessions.reduce((a, s) => a + (+s.minutes || 0), 0),
+    };
+    yearReportCache.set(cacheKey, data);
+    return data;
+  }
+  function syncYearReportOptions() {
+    const select = q('#yearWallYear');
+    if (!select) return;
+    ensureYearIndexes();
+    const current = select.value,
+      signature = yearChoices.join(',');
+    if (select.dataset.years !== signature) {
+      select.innerHTML = yearChoices.map((y) => `<option value="${y}">${y}年</option>`).join('');
+      select.dataset.years = signature;
+      if (yearChoices.includes(+current)) select.value = current;
+    }
+  }
+  async function hydrateYearCovers(preview, version) {
+    const imgs = qa('img[data-cover-key]', preview),
+      missing = [
+        ...new Set(
+          imgs.map((img) => img.dataset.coverKey).filter((key) => key && !yearCoverCache.has(key)),
+        ),
+      ];
+    if (missing.length) {
+      const rows = await getCovers(missing);
+      if (version !== yearReportRenderVersion) return;
+      for (const key of missing) {
+        const blob = rows.get(key);
+        if (blob) yearCoverCache.set(key, blob);
+      }
+    }
+    for (const img of imgs) {
+      if (version !== yearReportRenderVersion || !img.isConnected) return;
+      const key = img.dataset.coverKey,
+        blob = yearCoverCache.get(key);
+      if (blob) {
+        let url = yearCoverUrlCache.get(key);
+        if (!url) {
+          url = URL.createObjectURL(blob);
+          yearCoverUrlCache.set(key, url);
+        }
+        img.src = url;
+        img.closest('.cover-art')?.classList.add('has-image');
+      } else queueRemoteCover(img);
+    }
+  }
+  async function renderYearReport() {
     syncYearReportOptions();
-    const year=+q('#yearWallYear')?.value||new Date().getFullYear(),mode=q('#yearWallMode')?.value||'read',preview=q('#yearWallPreview'),version=++yearReportRenderVersion;if(!preview)return;const {months,all,days,mins}=buildYearReport(year,mode);
-    preview.innerHTML=`<div class="year-report-stats"><span>${all.length} 本${mode==='done'?'读完':'读过'}</span><span>${days} 个阅读日</span><span>${Math.round(mins)} 分钟</span></div>`+(all.length?months.map((bs,i)=>`<div class="year-row"><b>${String(i+1).padStart(2,'0')}</b><div>${bs.map(x=>`<span class="poster-cover cover-art" style="--cover:${x.visualColor||x.color||state.accent}"><img data-cover-key="${esc2(x.key)}" alt="" loading="lazy"><i>${esc2(x.title)}</i></span>`).join('')}</div></div>`).join(''):`<div class="empty-text">${year} 年暂时没有符合“${mode==='done'?'年度读完':'年度读过'}”条件的书。</div>`);hydrateYearCovers(preview,version);
+    const year = +q('#yearWallYear')?.value || new Date().getFullYear(),
+      mode = q('#yearWallMode')?.value || 'read',
+      preview = q('#yearWallPreview'),
+      version = ++yearReportRenderVersion;
+    if (!preview) return;
+    const { months, all, days, mins } = buildYearReport(year, mode);
+    preview.innerHTML =
+      `<div class="year-report-stats"><span>${all.length} 本${mode === 'done' ? '读完' : '读过'}</span><span>${days} 个阅读日</span><span>${Math.round(mins)} 分钟</span></div>` +
+      (all.length
+        ? months
+            .map(
+              (bs, i) =>
+                `<div class="year-row"><b>${String(i + 1).padStart(2, '0')}</b><div>${bs.map((x) => `<span class="poster-cover cover-art" style="--cover:${x.visualColor || x.color || state.accent}"><img data-cover-key="${esc2(x.key)}" alt="" loading="lazy"><i>${esc2(x.title)}</i></span>`).join('')}</div></div>`,
+            )
+            .join('')
+        : `<div class="empty-text">${year} 年暂时没有符合“${mode === 'done' ? '年度读完' : '年度读过'}”条件的书。</div>`);
+    hydrateYearCovers(preview, version);
   }
-  function installYearModes(){const actions=q('.year-wall-actions');if(!actions||q('#yearWallMode'))return;const sel=document.createElement('select');sel.id='yearWallMode';sel.className='year-wall-mode';sel.innerHTML='<option value="read">年度读过</option><option value="done">年度读完</option>';actions.prepend(sel);const saveBtn=q('#saveYearWall');if(saveBtn)saveBtn.textContent='预览图片';sel.onchange=renderYearReport;q('#yearWallYear').onchange=renderYearReport;if(saveBtn)saveBtn.onclick=()=>openModulePreview(saveBtn.closest('.year-wall'),'年度阅读报告');window.renderYearWall=renderYearReport;
+  function installYearModes() {
+    const actions = q('.year-wall-actions');
+    if (!actions || q('#yearWallMode')) return;
+    const sel = document.createElement('select');
+    sel.id = 'yearWallMode';
+    sel.className = 'year-wall-mode';
+    sel.innerHTML = '<option value="read">年度读过</option><option value="done">年度读完</option>';
+    actions.prepend(sel);
+    const saveBtn = q('#saveYearWall');
+    if (saveBtn) saveBtn.textContent = '预览图片';
+    sel.onchange = renderYearReport;
+    q('#yearWallYear').onchange = renderYearReport;
+    if (saveBtn)
+      saveBtn.onclick = () => openModulePreview(saveBtn.closest('.year-wall'), '年度阅读报告');
+    window.renderYearWall = renderYearReport;
   }
 
-  function blobDataUrl(blob){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(blob)})}
-  const EXPORT_FONTS={
-    system:{label:'跟随网页'},
-    lxgw:{label:'霞鹜新致宋',family:'YuejiExportLXGW',url:'assets/fonts/lxgw-neo-zhisong.woff'},
-    clearhan:{label:'屏显臻宋',family:'YuejiExportClearHan',url:'assets/fonts/clear-han-serif.woff'},
-    huiwen:{label:'汇文明朝体',family:'YuejiExportHuiwen',url:'assets/fonts/huiwen-mincho.woff'}
+  function blobDataUrl(blob) {
+    return new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result);
+      r.onerror = rej;
+      r.readAsDataURL(blob);
+    });
+  }
+  const EXPORT_FONTS = {
+    system: { label: '跟随网页' },
+    lxgw: {
+      label: '霞鹜新致宋',
+      family: 'YuejiExportLXGW',
+      url: 'assets/fonts/lxgw-neo-zhisong.woff',
+    },
+    clearhan: {
+      label: '屏显臻宋',
+      family: 'YuejiExportClearHan',
+      url: 'assets/fonts/clear-han-serif.woff',
+    },
+    huiwen: {
+      label: '汇文明朝体',
+      family: 'YuejiExportHuiwen',
+      url: 'assets/fonts/huiwen-mincho.woff',
+    },
   };
-  let exportFontCache={key:'system',font:null};
-  function releaseExportFontCache(){const face=exportFontCache.font?.face;if(face)try{document.fonts.delete(face)}catch{}exportFontCache={key:'system',font:null}}
-  async function loadExportFont(key){const picked=EXPORT_FONTS[key]||EXPORT_FONTS.system;if(!picked.url)return null;if(exportFontCache.key===key&&exportFontCache.font)return exportFontCache.font;const response=await fetch(new URL(picked.url,location.href),{cache:'force-cache'});if(!response.ok)throw new Error(`字体下载失败 (${response.status})`);const blob=await response.blob();if(blob.size>16*1024*1024)throw new Error('字体文件过大');const data=await blobDataUrl(blob),font={family:picked.family,data,face:null};if('FontFace'in window&&document.fonts){font.face=await new FontFace(picked.family,`url(${data})`).load();document.fonts.add(font.face)}exportFontCache={key,font};return font}
-  function chosenExportFont(){const key=q('#moduleExportFont')?.value||'system';return Object.hasOwn(EXPORT_FONTS,key)?key:'system'}
-  function assertPreviewActive(active){if(active&&!active())throw new Error('PREVIEW_CANCELLED')}
-  async function inlinePreviewImages(source,clone,active){const originals=[source,...qa('*',source)],copies=[clone,...qa('*',clone)];for(let i=0;i<copies.length;i++){assertPreviewActive(active);const a=originals[i],b=copies[i];if(!(a instanceof HTMLImageElement)||!(b instanceof HTMLImageElement))continue;let blob=null;try{if(a.dataset.coverKey)blob=await getCover(a.dataset.coverKey)}catch{}try{if(!blob&&a.currentSrc){const r=await fetch(a.currentSrc,{mode:'cors',referrerPolicy:'no-referrer'});if(r.ok)blob=await r.blob()}}catch{}if(blob){b.src=await blobDataUrl(blob);b.style.display='block'}else if(/^https?:/i.test(b.src)){b.removeAttribute('src');b.style.display='none'}if(i&&i%12===0)await new Promise(requestAnimationFrame)}}
-  const CAPTURE_STYLE_PROPS=['display','position','box-sizing','width','height','min-width','min-height','max-width','max-height','margin','padding','gap','grid-template-columns','grid-template-rows','grid-column','grid-row','flex','flex-direction','flex-wrap','align-items','align-content','justify-content','overflow','overflow-x','overflow-y','background','background-color','background-image','background-size','background-position','color','border','border-width','border-style','border-color','border-radius','box-shadow','font','font-family','font-size','font-weight','font-style','line-height','letter-spacing','text-align','text-transform','white-space','word-break','overflow-wrap','opacity','transform','transform-origin','object-fit','object-position','aspect-ratio'];
-  async function inlineComputedStyles(source,clone,active){const originals=[source,...qa('*',source)],copies=[clone,...qa('*',clone)],total=Math.min(originals.length,copies.length);for(let i=0;i<total;i++){assertPreviewActive(active);const cs=getComputedStyle(originals[i]),target=copies[i];let text='';for(const p of CAPTURE_STYLE_PROPS){const value=cs.getPropertyValue(p);if(value)text+=`${p}:${value};`}target.setAttribute('style',text+(target.getAttribute('style')||''));if(i&&i%20===0)await new Promise(requestAnimationFrame)}}
-  function canvasBlob(canvas){return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('PNG 编码失败')),'image/png'))}
-  function exportPalette(){return{paper:'#f7f6f2',card:'#ffffff',soft:'#ebece8',ink:'#17201c',muted:'#68736d',line:'#d8ddd8',accent:state.accent||'#5f8f7b'}}
-  function canvasFont(font,size,weight=400){return`${weight} ${size}px "${font?.family||'PingFang SC'}","Microsoft YaHei",sans-serif`}
-  function roundedPath(ctx,x,y,w,h,r){const radius=Math.max(0,Math.min(r,w/2,h/2));ctx.beginPath();ctx.moveTo(x+radius,y);ctx.lineTo(x+w-radius,y);ctx.quadraticCurveTo(x+w,y,x+w,y+radius);ctx.lineTo(x+w,y+h-radius);ctx.quadraticCurveTo(x+w,y+h,x+w-radius,y+h);ctx.lineTo(x+radius,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-radius);ctx.lineTo(x,y+radius);ctx.quadraticCurveTo(x,y,x+radius,y);ctx.closePath()}
-  function roundedRect(ctx,x,y,w,h,r,fill,stroke=''){roundedPath(ctx,x,y,w,h,r);if(fill){ctx.fillStyle=fill;ctx.fill()}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=2;ctx.stroke()}}
-  const renderCalendarPngCanvas=renderCalendarPng;
-  renderCalendarPng=async function(font,active){await renderMonthCalendar();await new Promise(requestAnimationFrame);assertPreviewActive(active);return renderCalendarPngCanvas(font,active)};
-  function fitText(ctx,text,maxWidth){let value=String(text||'');if(ctx.measureText(value).width<=maxWidth)return value;while(value.length>1&&ctx.measureText(value+'…').width>maxWidth)value=value.slice(0,-1);return value+'…'}
-  async function exportCoverBitmap(key){let blob=null;try{blob=await getCover(key)}catch{}if(!blob){const b=state.books.find(x=>String(x.key)===String(key)),url=b?.weReadCover||b?.cover;try{if(url){const response=await fetch(url,{mode:'cors',referrerPolicy:'no-referrer',credentials:'omit'});if(response.ok)blob=await response.blob()}}catch{}}if(!blob)return null;try{return await createImageBitmap(blob)}catch{return null}}
-  function drawCover(ctx,bmp,x,y,w,h,fallback,title,font,p){ctx.save();roundedPath(ctx,x,y,w,h,8);ctx.clip();ctx.fillStyle=p?.soft||fallback||'#eee';ctx.fillRect(x,y,w,h);if(bmp){const scale=Math.min(w/bmp.width,h/bmp.height),dw=bmp.width*scale,dh=bmp.height*scale,dx=x+(w-dw)/2,dy=y+(h-dh)/2;ctx.drawImage(bmp,dx,dy,dw,dh)}else{ctx.fillStyle=fallback||p.accent;ctx.fillRect(x,y,w,h);ctx.fillStyle='#fff';ctx.font=canvasFont(font,20,700);ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(fitText(ctx,title,w-18),x+w/2,y+h/2)}ctx.restore()}
-  async function renderCalendarPng(font,active){const p=exportPalette(),W=1080,pad=48,gap=8,cellW=(W-pad*2-gap*6)/7,cellH=118,cells=qa('#monthCalendar > *'),rows=Math.ceil(cells.length/7),H=pad+76+48+rows*(cellH+gap)+pad-gap,canvas=document.createElement('canvas');canvas.width=W;canvas.height=H;const ctx=canvas.getContext('2d');ctx.fillStyle=p.paper;ctx.fillRect(0,0,W,H);ctx.fillStyle=p.ink;ctx.font=canvasFont(font,38,800);ctx.textAlign='left';ctx.fillText(q('#calendarPeriod')?.textContent||'阅读月历',pad,pad+34);ctx.font=canvasFont(font,22,600);ctx.textAlign='center';['日','一','二','三','四','五','六'].forEach((day,i)=>{ctx.fillStyle=i===0?'#b35e5e':p.muted;ctx.fillText(day,pad+i*(cellW+gap)+cellW/2,pad+92)});const keys=[...new Set(cells.map(el=>el.querySelector?.('img[data-cover-key]')?.dataset.coverKey).filter(Boolean))],covers=new Map(await Promise.all(keys.map(async key=>[key,await exportCoverBitmap(key)])));assertPreviewActive(active);for(let i=0;i<cells.length;i++){const el=cells[i],x=pad+(i%7)*(cellW+gap),y=pad+112+Math.floor(i/7)*(cellH+gap);if(!el.matches('.cover-day'))continue;roundedRect(ctx,x,y,cellW,cellH,8,p.soft,el.classList.contains('is-today')?p.accent:'');const img=el.querySelector('img[data-cover-key]'),title=el.querySelector('.day-cover>i')?.textContent||'微信读书';if(img)drawCover(ctx,covers.get(img.dataset.coverKey),x,y,cellW,cellH,state.books.find(b=>String(b.key)===img.dataset.coverKey)?.color,title,font,p);else if(el.classList.contains('has-weread-total')){ctx.fillStyle='#dce9e3';ctx.fillRect(x,y,cellW,cellH);ctx.fillStyle=p.accent;ctx.font=canvasFont(font,20,800);ctx.textAlign='center';ctx.fillText('微信读书',x+cellW/2,y+cellH/2+8)}ctx.fillStyle='rgba(255,255,255,.92)';roundedRect(ctx,x+7,y+7,34,30,15,'rgba(255,255,255,.92)');ctx.fillStyle=p.ink;ctx.font=canvasFont(font,17,800);ctx.textAlign='center';ctx.fillText(el.querySelector('.day-number')?.textContent||'',x+24,y+28);const mins=el.querySelector('small')?.textContent;if(mins){roundedRect(ctx,x+6,y+cellH-31,cellW-12,25,5,'rgba(20,28,25,.78)');ctx.fillStyle='#fff';ctx.font=canvasFont(font,14,700);ctx.fillText(fitText(ctx,mins,cellW-20),x+cellW/2,y+cellH-13)}if(i&&i%14===0)await new Promise(requestAnimationFrame);assertPreviewActive(active)}covers.forEach(bmp=>bmp?.close?.());return canvasBlob(canvas)}
-  async function renderMonthlyPng(font,active){const p=exportPalette(),W=1080,pad=56,gap=20,books=qa('#monthSeenBooks .month-book[data-book-key]'),cols=3,cardW=(W-pad*2-gap*(cols-1))/cols,cardH=252,rows=Math.ceil(books.length/cols),summary=q('#monthSummary')?.textContent||'',summaryLines=Math.max(1,Math.ceil(summary.length/48)),H=pad+92+120+70+(rows?rows*(cardH+gap):150)+105+summaryLines*30,canvas=document.createElement('canvas');canvas.width=W;canvas.height=H;const ctx=canvas.getContext('2d');ctx.fillStyle=p.paper;ctx.fillRect(0,0,W,H);ctx.fillStyle=p.ink;ctx.font=canvasFont(font,42,800);ctx.textAlign='left';ctx.fillText(q('#monthlyTitle')?.textContent||'阅读月报',pad,pad+38);const kpis=qa('#monthlyKpis .monthly-kpi');kpis.forEach((el,i)=>{const w=(W-pad*2-gap*3)/4,x=pad+i*(w+gap),y=pad+70;roundedRect(ctx,x,y,w,92,14,p.card,p.line);ctx.fillStyle=p.ink;ctx.font=canvasFont(font,28,800);ctx.fillText(el.querySelector('b')?.textContent||'0',x+18,y+38);ctx.fillStyle=p.muted;ctx.font=canvasFont(font,15,600);ctx.fillText(el.querySelector('span')?.textContent||'',x+18,y+67)});ctx.fillStyle=p.ink;ctx.font=canvasFont(font,26,800);ctx.fillText(q('#monthSeenTitle')?.textContent||'本月看过',pad,pad+205);const keys=books.map(el=>el.dataset.bookKey),covers=new Map(await Promise.all(keys.map(async key=>[key,await exportCoverBitmap(key)])));assertPreviewActive(active);const startY=pad+226;if(!books.length){roundedRect(ctx,pad,startY,W-pad*2,110,16,p.card,p.line);ctx.fillStyle=p.muted;ctx.font=canvasFont(font,20,500);ctx.fillText(q('#monthSeenBooks .empty-text')?.textContent||'这个月没有可定位到具体书籍的记录。',pad+22,startY+60)}for(let i=0;i<books.length;i++){const el=books[i],b=state.books.find(x=>String(x.key)===String(el.dataset.bookKey)),x=pad+(i%cols)*(cardW+gap),y=startY+Math.floor(i/cols)*(cardH+gap);roundedRect(ctx,x,y,cardW,cardH,16,p.card,p.line);drawCover(ctx,covers.get(el.dataset.bookKey),x+16,y+16,126,189,b?.visualColor||b?.color||p.accent,b?.title||'',font,p);ctx.fillStyle=p.ink;ctx.font=canvasFont(font,20,800);ctx.fillText(fitText(ctx,b?.title||'未命名',cardW-174),x+158,y+68);ctx.fillStyle=p.muted;ctx.font=canvasFont(font,15,500);ctx.fillText(fitText(ctx,b?.author||'作者待补充',cardW-174),x+158,y+101);ctx.font=canvasFont(font,14,600);ctx.fillText(fitText(ctx,el.querySelector('.month-book-evidence')?.textContent||'',cardW-174),x+158,y+136);if(i&&i%9===0)await new Promise(requestAnimationFrame);assertPreviewActive(active)}covers.forEach(bmp=>bmp?.close?.());const summaryY=startY+(rows?rows*(cardH+gap):130)+35;ctx.fillStyle=p.ink;ctx.font=canvasFont(font,23,800);ctx.fillText('月度小结',pad,summaryY);ctx.fillStyle=p.muted;ctx.font=canvasFont(font,18,500);const max=W-pad*2;let line='',y=summaryY+36;for(const ch of summary){const next=line+ch;if(ctx.measureText(next).width>max){ctx.fillText(line,pad,y);line=ch;y+=30}else line=next}if(line)ctx.fillText(line,pad,y);return canvasBlob(canvas)}
-  function compactCalendarExport(card,clone){if(card.id!=='monthCalendarWrap')return false;const width=1080;clone.style.setProperty('width',width+'px','important');clone.style.setProperty('height','auto','important');for(const grid of qa('.calendar-weekdays,.cover-calendar',clone)){grid.style.setProperty('width','auto','important');grid.style.setProperty('grid-template-columns','repeat(7,minmax(0,1fr))','important')}for(const cell of qa('.cover-day,.calendar-blank',clone)){cell.style.setProperty('width','auto','important');cell.style.setProperty('height','auto','important');cell.style.setProperty('min-height','0','important');cell.style.setProperty('aspect-ratio','1.12 / 1','important')}return true}
-  function measuredCloneHeight(clone,width,fallback){const shell=document.createElement('div');shell.style.cssText=`position:fixed;left:-20000px;top:0;width:${width}px;visibility:hidden;pointer-events:none;contain:layout style`;shell.appendChild(clone);document.body.appendChild(shell);const height=Math.ceil(Math.max(clone.scrollHeight,clone.getBoundingClientRect().height,fallback));clone.remove();shell.remove();return height}
-  async function captureNative(card,font,active){let width=Math.ceil(Math.max(card.scrollWidth,card.getBoundingClientRect().width)),height=Math.ceil(Math.max(card.scrollHeight,card.getBoundingClientRect().height));if(width>12000||height>30000)throw new Error('模块尺寸超过安全导出范围');const clone=card.cloneNode(true);await inlineComputedStyles(card,clone,active);await inlinePreviewImages(card,clone,active);assertPreviewActive(active);qa('.module-export-btn',clone).forEach(x=>x.remove());if(font){for(const el of [clone,...qa('*',clone)])el.style.setProperty('font-family',`"${font.family}",serif`,'important')}const compactCalendar=compactCalendarExport(card,clone);if(compactCalendar)width=1080;clone.style.setProperty('width',width+'px','important');clone.style.setProperty('height','auto','important');clone.style.margin='0';clone.style.transform='none';height=measuredCloneHeight(clone,width,compactCalendar?1:height);if(height>30000)throw new Error('模块尺寸超过安全导出范围');const xml=new XMLSerializer().serializeToString(clone),fontCss=font?`<style>@font-face{font-family:"${font.family}";src:url("${font.data}") format("woff");font-style:normal;font-weight:100 900;font-display:block}</style>`:'',svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml">${fontCss}${xml}</div></foreignObject></svg>`;return{blob:new Blob([svg],{type:'image/svg+xml;charset=utf-8'}),width,height}}
-  async function rasterizePreview(capture){const sourceUrl=URL.createObjectURL(capture.blob);try{const img=new Image();await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('PNG 生成超时')),15000);img.onload=()=>{clearTimeout(timer);resolve()};img.onerror=()=>{clearTimeout(timer);reject(new Error('SVG 无法转为 PNG'))};img.src=sourceUrl});const pixelLimit=12000000,dimensionLimit=8192,scale=Math.min(1.5,dimensionLimit/capture.width,dimensionLimit/capture.height,Math.sqrt(pixelLimit/(capture.width*capture.height)));if(scale<.5)throw new Error('LONG_PREVIEW_SVG');const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(capture.width*scale));canvas.height=Math.max(1,Math.round(capture.height*scale));const ctx=canvas.getContext('2d');if(!ctx)throw new Error('浏览器无法创建图片画布');ctx.drawImage(img,0,0,canvas.width,canvas.height);const png=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));if(!png)throw new Error('PNG 编码失败');canvas.width=1;canvas.height=1;return png}finally{URL.revokeObjectURL(sourceUrl)}}
-  function clearPreviewUrl(d){if(d.dataset.previewUrl){URL.revokeObjectURL(d.dataset.previewUrl);delete d.dataset.previewUrl}delete d.dataset.previewExt}
-  function installPreviewDialog(){if(q('#modulePreviewDialog'))return;const d=document.createElement('div');d.id='modulePreviewDialog';d.className='feature-dialog';d.innerHTML=`<div class="feature-panel"><div class="feature-panel-head"><b id="modulePreviewTitle">图片预览</b><div class="feature-panel-actions"><button class="primary-btn" id="downloadModuleImage" disabled>正在生成</button><button class="soft-btn" data-close-preview>关闭</button></div></div><div class="feature-font-row"><label for="moduleExportFont">导出字体</label><select id="moduleExportFont" class="feature-font-select"><option value="system">跟随网页</option><option value="lxgw">霞鹜新致宋</option><option value="clearhan">屏显臻宋</option><option value="huiwen">汇文明朝体</option></select><span class="feature-font-note">字体仅用于导出的图片；关闭预览后会释放字体内存</span></div><div class="feature-preview" id="modulePreview"><div class="feature-preview-status">正在生成预览……</div></div></div>`;document.body.appendChild(d);const picker=q('#moduleExportFont');try{const saved=localStorage.getItem('yueji-export-font-v1');if(EXPORT_FONTS[saved])picker.value=saved}catch{}picker.onchange=()=>{try{localStorage.setItem('yueji-export-font-v1',picker.value)}catch{}releaseExportFontCache();generateModulePreview(d)};d.onclick=e=>{if(e.target===d||e.target.closest('[data-close-preview]')){d.dataset.job=String((+d.dataset.job||0)+1);d.classList.remove('show');clearPreviewUrl(d);releaseExportFontCache()}};q('#downloadModuleImage').onclick=()=>{const url=d.dataset.previewUrl;if(!url)return;const a=document.createElement('a');a.download=(d.dataset.name||'阅迹')+'.'+(d.dataset.previewExt||'png');a.href=url;document.body.appendChild(a);a.click();a.remove()}}
-  async function generateModulePreview(d){const card=d.__previewCard,producer=d.__previewProducer;if(!card&&!producer)return;const out=q('#modulePreview'),download=q('#downloadModuleImage'),job=String((+d.dataset.job||0)+1),fontKey=chosenExportFont(),active=()=>d.dataset.job===job&&d.classList.contains('show');d.dataset.job=job;clearPreviewUrl(d);download.disabled=true;download.textContent='正在生成';out.innerHTML=`<div class="feature-preview-status">${fontKey==='system'?'正在生成 PNG 预览……':'正在加载字体并生成预览……'}</div>`;try{const font=await loadExportFont(fontKey);assertPreviewActive(active);let blob,ext='png',long=false;if(producer){blob=await producer(font,active)}else{const capture=await captureNative(card,font,active);assertPreviewActive(active);try{blob=await rasterizePreview(capture)}catch(error){console.warn('PNG preview fell back to SVG',error);blob=capture.blob;ext='svg';long=String(error?.message||error)==='LONG_PREVIEW_SVG'}}assertPreviewActive(active);const url=URL.createObjectURL(blob);d.dataset.previewUrl=url;d.dataset.previewExt=ext;const img=new Image();img.alt=d.dataset.name||'模块预览';img.src=url;out.replaceChildren(img);if(long){const note=document.createElement('div');note.className='feature-preview-status';note.textContent='这个模块很长，已保留为清晰的 SVG，避免手机生成超大 PNG 时卡死。';out.appendChild(note)}download.disabled=false;download.textContent=ext==='png'?'保存 PNG':'保存清晰图片'}catch(e){if(String(e?.message||e)==='PREVIEW_CANCELLED'||d.dataset.job!==job)return;console.error(e);download.disabled=true;download.textContent='生成失败';out.innerHTML=`<div class="feature-preview-status">${fontKey==='system'?'这个模块暂时无法生成图片。':'所选字体或图片生成失败。'}请重新选择字体或关闭后重试，页面数据没有受到影响。</div>`}finally{if(d.dataset.job===job)releaseExportFontCache()}}
-  async function preparedCalendarPng(font,active){return renderCalendarPng(font,active)}
-  function openModulePreview(card,name,producer=null){installPreviewDialog();const d=q('#modulePreviewDialog');d.__previewCard=card;d.__previewProducer=producer||(card?.id==='monthCalendarWrap'?preparedCalendarPng:null);d.dataset.name=(name||'阅迹模块').replace(/[\\/:*?"<>|]/g,'-');q('#modulePreviewTitle').textContent=name||'图片预览';d.classList.add('show');generateModulePreview(d)}
-  async function preparedMonthlyPng(font,active){renderMonthly();await hydrateCovers(q('#monthSeenBooks'));await new Promise(requestAnimationFrame);assertPreviewActive(active);return renderMonthlyPng(font,active)}
-  function openMonthlyReportPreview(){openModulePreview(null,q('#monthlyTitle')?.textContent||'阅读月报',preparedMonthlyPng)}
-  function installMonthlyExport(){const head=q('.monthly-head');if(!head)return;let button=q('.monthly-report-export',head);if(!button){button=document.createElement('button');button.className='module-export-btn monthly-report-export';button.textContent='预览 / 导出月报';head.appendChild(button)}button.dataset.exportProducer='monthly';button.onclick=e=>{e.preventDefault();e.stopPropagation();openMonthlyReportPreview()}}
-  function moduleName(card){return q('.section-title',card)?.textContent.trim()||q('.home-section-title b',card)?.textContent.trim()||q('h2,h3',card)?.textContent.trim()||'阅迹模块'}
-  function decorateModules(root=document){qa('.page .card',root).forEach(card=>{if(card.id==='libraryTools'||card.classList.contains('year-wall')||card.closest('#statsPanel-month'))return;if(card.dataset.exportReady)return;card.dataset.exportReady='1';const btn=document.createElement('button');btn.className='module-export-btn';btn.textContent='预览 / 导出';if(card.id==='monthCalendarWrap')btn.dataset.exportProducer='calendar';btn.onclick=e=>{e.preventDefault();e.stopPropagation();openModulePreview(card,moduleName(card),card.id==='monthCalendarWrap'?preparedCalendarPng:null)};if(card.id==='readingEvolutionCard'){const toolbar=q('.evolution-toolbar',card);if(toolbar){toolbar.appendChild(btn);return}}const head=q(':scope > .section-head',card)||q(':scope > .home-section-title',card);if(head)head.appendChild(btn);else{card.classList.add('export-corner');card.prepend(btn)}})}
+  let exportFontCache = { key: 'system', font: null };
+  function releaseExportFontCache() {
+    const face = exportFontCache.font?.face;
+    if (face)
+      try {
+        document.fonts.delete(face);
+      } catch {}
+    exportFontCache = { key: 'system', font: null };
+  }
+  async function loadExportFont(key) {
+    const picked = EXPORT_FONTS[key] || EXPORT_FONTS.system;
+    if (!picked.url) return null;
+    if (exportFontCache.key === key && exportFontCache.font) return exportFontCache.font;
+    const response = await fetch(new URL(picked.url, location.href), { cache: 'force-cache' });
+    if (!response.ok) throw new Error(`字体下载失败 (${response.status})`);
+    const blob = await response.blob();
+    if (blob.size > 16 * 1024 * 1024) throw new Error('字体文件过大');
+    const data = await blobDataUrl(blob),
+      font = { family: picked.family, data, face: null };
+    if ('FontFace' in window && document.fonts) {
+      font.face = await new FontFace(picked.family, `url(${data})`).load();
+      document.fonts.add(font.face);
+    }
+    exportFontCache = { key, font };
+    return font;
+  }
+  function chosenExportFont() {
+    const key = q('#moduleExportFont')?.value || 'system';
+    return Object.hasOwn(EXPORT_FONTS, key) ? key : 'system';
+  }
+  function assertPreviewActive(active) {
+    if (active && !active()) throw new Error('PREVIEW_CANCELLED');
+  }
+  async function inlinePreviewImages(source, clone, active) {
+    const originals = [source, ...qa('*', source)],
+      copies = [clone, ...qa('*', clone)];
+    for (let i = 0; i < copies.length; i++) {
+      assertPreviewActive(active);
+      const a = originals[i],
+        b = copies[i];
+      if (!(a instanceof HTMLImageElement) || !(b instanceof HTMLImageElement)) continue;
+      let blob = null;
+      try {
+        if (a.dataset.coverKey) blob = await getCover(a.dataset.coverKey);
+      } catch {}
+      try {
+        if (!blob && a.currentSrc) {
+          const r = await fetch(a.currentSrc, { mode: 'cors', referrerPolicy: 'no-referrer' });
+          if (r.ok) blob = await r.blob();
+        }
+      } catch {}
+      if (blob) {
+        b.src = await blobDataUrl(blob);
+        b.style.display = 'block';
+      } else if (/^https?:/i.test(b.src)) {
+        b.removeAttribute('src');
+        b.style.display = 'none';
+      }
+      if (i && i % 12 === 0) await new Promise(requestAnimationFrame);
+    }
+  }
+  const CAPTURE_STYLE_PROPS = [
+    'display',
+    'position',
+    'box-sizing',
+    'width',
+    'height',
+    'min-width',
+    'min-height',
+    'max-width',
+    'max-height',
+    'margin',
+    'padding',
+    'gap',
+    'grid-template-columns',
+    'grid-template-rows',
+    'grid-column',
+    'grid-row',
+    'flex',
+    'flex-direction',
+    'flex-wrap',
+    'align-items',
+    'align-content',
+    'justify-content',
+    'overflow',
+    'overflow-x',
+    'overflow-y',
+    'background',
+    'background-color',
+    'background-image',
+    'background-size',
+    'background-position',
+    'color',
+    'border',
+    'border-width',
+    'border-style',
+    'border-color',
+    'border-radius',
+    'box-shadow',
+    'font',
+    'font-family',
+    'font-size',
+    'font-weight',
+    'font-style',
+    'line-height',
+    'letter-spacing',
+    'text-align',
+    'text-transform',
+    'white-space',
+    'word-break',
+    'overflow-wrap',
+    'opacity',
+    'transform',
+    'transform-origin',
+    'object-fit',
+    'object-position',
+    'aspect-ratio',
+  ];
+  async function inlineComputedStyles(source, clone, active) {
+    const originals = [source, ...qa('*', source)],
+      copies = [clone, ...qa('*', clone)],
+      total = Math.min(originals.length, copies.length);
+    for (let i = 0; i < total; i++) {
+      assertPreviewActive(active);
+      const cs = getComputedStyle(originals[i]),
+        target = copies[i];
+      let text = '';
+      for (const p of CAPTURE_STYLE_PROPS) {
+        const value = cs.getPropertyValue(p);
+        if (value) text += `${p}:${value};`;
+      }
+      target.setAttribute('style', text + (target.getAttribute('style') || ''));
+      if (i && i % 20 === 0) await new Promise(requestAnimationFrame);
+    }
+  }
+  function canvasBlob(canvas) {
+    return new Promise((resolve, reject) => {
+      if (!canvas.width || !canvas.height || canvas.width * canvas.height > 8_000_000)
+        return reject(new Error('导出尺寸超过安全范围'));
+      try {
+        if (canvas.getContext('2d').getImageData(0, 0, 1, 1).data[3] === 0)
+          return reject(new Error('导出画布为空'));
+      } catch (error) {
+        return reject(error);
+      }
+      canvas.toBlob(
+        (blob) =>
+          blob && blob.size > 512 ? resolve(blob) : reject(new Error('PNG 编码失败或结果为空')),
+        'image/png',
+      );
+    });
+  }
+  function exportPalette() {
+    return {
+      paper: '#f7f6f2',
+      card: '#ffffff',
+      soft: '#ebece8',
+      ink: '#17201c',
+      muted: '#68736d',
+      line: '#d8ddd8',
+      accent: state.accent || '#5f8f7b',
+    };
+  }
+  function canvasFont(font, size, weight = 400) {
+    return `${weight} ${size}px "${font?.family || 'PingFang SC'}","Microsoft YaHei",sans-serif`;
+  }
+  function roundedPath(ctx, x, y, w, h, r) {
+    const radius = Math.max(0, Math.min(r, w / 2, h / 2));
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + w - radius, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+    ctx.lineTo(x + w, y + h - radius);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+    ctx.lineTo(x + radius, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+  }
+  function roundedRect(ctx, x, y, w, h, r, fill, stroke = '') {
+    roundedPath(ctx, x, y, w, h, r);
+    if (fill) {
+      ctx.fillStyle = fill;
+      ctx.fill();
+    }
+    if (stroke) {
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+  const renderCalendarPngCanvas = renderCalendarPng;
+  renderCalendarPng = async function (font, active) {
+    await renderMonthCalendar();
+    await new Promise(requestAnimationFrame);
+    assertPreviewActive(active);
+    return renderCalendarPngCanvas(font, active);
+  };
+  function fitText(ctx, text, maxWidth) {
+    let value = String(text || '');
+    if (ctx.measureText(value).width <= maxWidth) return value;
+    while (value.length > 1 && ctx.measureText(value + '…').width > maxWidth)
+      value = value.slice(0, -1);
+    return value + '…';
+  }
+  async function exportCoverBitmap(key) {
+    let blob = null;
+    try {
+      blob = await getCover(key);
+    } catch {}
+    if (!blob) {
+      const b = state.books.find((x) => String(x.key) === String(key)),
+        url = b?.weReadCover || b?.cover;
+      try {
+        if (url) {
+          const response = await fetch(url, {
+            mode: 'cors',
+            referrerPolicy: 'no-referrer',
+            credentials: 'omit',
+          });
+          if (response.ok) blob = await response.blob();
+        }
+      } catch {}
+    }
+    if (!blob) return null;
+    try {
+      return await createImageBitmap(blob);
+    } catch {
+      return null;
+    }
+  }
+  function drawCover(ctx, bmp, x, y, w, h, fallback, title, font, p) {
+    ctx.save();
+    roundedPath(ctx, x, y, w, h, 8);
+    ctx.clip();
+    ctx.fillStyle = p?.soft || fallback || '#eee';
+    ctx.fillRect(x, y, w, h);
+    if (bmp) {
+      const scale = Math.min(w / bmp.width, h / bmp.height),
+        dw = bmp.width * scale,
+        dh = bmp.height * scale,
+        dx = x + (w - dw) / 2,
+        dy = y + (h - dh) / 2;
+      ctx.drawImage(bmp, dx, dy, dw, dh);
+    } else {
+      ctx.fillStyle = fallback || p.accent;
+      ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = '#fff';
+      ctx.font = canvasFont(font, 20, 700);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(fitText(ctx, title, w - 18), x + w / 2, y + h / 2);
+    }
+    ctx.restore();
+  }
+  async function renderCalendarPng(font, active) {
+    const p = exportPalette(),
+      W = 1080,
+      pad = 48,
+      gap = 8,
+      cellW = (W - pad * 2 - gap * 6) / 7,
+      cellH = 118,
+      cells = qa('#monthCalendar > *'),
+      rows = Math.ceil(cells.length / 7),
+      H = pad + 76 + 48 + rows * (cellH + gap) + pad - gap,
+      canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = p.paper;
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = p.ink;
+    ctx.font = canvasFont(font, 38, 800);
+    ctx.textAlign = 'left';
+    ctx.fillText(q('#calendarPeriod')?.textContent || '阅读月历', pad, pad + 34);
+    ctx.font = canvasFont(font, 22, 600);
+    ctx.textAlign = 'center';
+    ['日', '一', '二', '三', '四', '五', '六'].forEach((day, i) => {
+      ctx.fillStyle = i === 0 ? '#b35e5e' : p.muted;
+      ctx.fillText(day, pad + i * (cellW + gap) + cellW / 2, pad + 92);
+    });
+    const keys = [
+        ...new Set(
+          cells
+            .map((el) => el.querySelector?.('img[data-cover-key]')?.dataset.coverKey)
+            .filter(Boolean),
+        ),
+      ],
+      covers = new Map(
+        await Promise.all(keys.map(async (key) => [key, await exportCoverBitmap(key)])),
+      );
+    assertPreviewActive(active);
+    for (let i = 0; i < cells.length; i++) {
+      const el = cells[i],
+        x = pad + (i % 7) * (cellW + gap),
+        y = pad + 112 + Math.floor(i / 7) * (cellH + gap);
+      if (!el.matches('.cover-day')) continue;
+      roundedRect(
+        ctx,
+        x,
+        y,
+        cellW,
+        cellH,
+        8,
+        p.soft,
+        el.classList.contains('is-today') ? p.accent : '',
+      );
+      const img = el.querySelector('img[data-cover-key]'),
+        title = el.querySelector('.day-cover>i')?.textContent || '微信读书';
+      if (img)
+        drawCover(
+          ctx,
+          covers.get(img.dataset.coverKey),
+          x,
+          y,
+          cellW,
+          cellH,
+          state.books.find((b) => String(b.key) === img.dataset.coverKey)?.color,
+          title,
+          font,
+          p,
+        );
+      else if (el.classList.contains('has-weread-total')) {
+        ctx.fillStyle = '#dce9e3';
+        ctx.fillRect(x, y, cellW, cellH);
+        ctx.fillStyle = p.accent;
+        ctx.font = canvasFont(font, 20, 800);
+        ctx.textAlign = 'center';
+        ctx.fillText('微信读书', x + cellW / 2, y + cellH / 2 + 8);
+      }
+      ctx.fillStyle = 'rgba(255,255,255,.92)';
+      roundedRect(ctx, x + 7, y + 7, 34, 30, 15, 'rgba(255,255,255,.92)');
+      ctx.fillStyle = p.ink;
+      ctx.font = canvasFont(font, 17, 800);
+      ctx.textAlign = 'center';
+      ctx.fillText(el.querySelector('.day-number')?.textContent || '', x + 24, y + 28);
+      const mins = el.querySelector('small')?.textContent;
+      if (mins) {
+        roundedRect(ctx, x + 6, y + cellH - 31, cellW - 12, 25, 5, 'rgba(20,28,25,.78)');
+        ctx.fillStyle = '#fff';
+        ctx.font = canvasFont(font, 14, 700);
+        ctx.fillText(fitText(ctx, mins, cellW - 20), x + cellW / 2, y + cellH - 13);
+      }
+      if (i && i % 14 === 0) await new Promise(requestAnimationFrame);
+      assertPreviewActive(active);
+    }
+    covers.forEach((bmp) => bmp?.close?.());
+    return canvasBlob(canvas);
+  }
+  async function renderMonthlyPng(font, active) {
+    const p = exportPalette(),
+      W = 1080,
+      pad = 56,
+      gap = 20,
+      books = qa('#monthSeenBooks .month-book[data-book-key]'),
+      cols = 3,
+      cardW = (W - pad * 2 - gap * (cols - 1)) / cols,
+      cardH = 252,
+      rows = Math.ceil(books.length / cols),
+      summary = q('#monthSummary')?.textContent || '',
+      summaryLines = Math.max(1, Math.ceil(summary.length / 48)),
+      H = pad + 92 + 120 + 70 + (rows ? rows * (cardH + gap) : 150) + 105 + summaryLines * 30,
+      canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = H;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = p.paper;
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = p.ink;
+    ctx.font = canvasFont(font, 42, 800);
+    ctx.textAlign = 'left';
+    ctx.fillText(q('#monthlyTitle')?.textContent || '阅读月报', pad, pad + 38);
+    const kpis = qa('#monthlyKpis .monthly-kpi');
+    kpis.forEach((el, i) => {
+      const w = (W - pad * 2 - gap * 3) / 4,
+        x = pad + i * (w + gap),
+        y = pad + 70;
+      roundedRect(ctx, x, y, w, 92, 14, p.card, p.line);
+      ctx.fillStyle = p.ink;
+      ctx.font = canvasFont(font, 28, 800);
+      ctx.fillText(el.querySelector('b')?.textContent || '0', x + 18, y + 38);
+      ctx.fillStyle = p.muted;
+      ctx.font = canvasFont(font, 15, 600);
+      ctx.fillText(el.querySelector('span')?.textContent || '', x + 18, y + 67);
+    });
+    ctx.fillStyle = p.ink;
+    ctx.font = canvasFont(font, 26, 800);
+    ctx.fillText(q('#monthSeenTitle')?.textContent || '本月看过', pad, pad + 205);
+    const keys = books.map((el) => el.dataset.bookKey),
+      covers = new Map(
+        await Promise.all(keys.map(async (key) => [key, await exportCoverBitmap(key)])),
+      );
+    assertPreviewActive(active);
+    const startY = pad + 226;
+    if (!books.length) {
+      roundedRect(ctx, pad, startY, W - pad * 2, 110, 16, p.card, p.line);
+      ctx.fillStyle = p.muted;
+      ctx.font = canvasFont(font, 20, 500);
+      ctx.fillText(
+        q('#monthSeenBooks .empty-text')?.textContent || '这个月没有可定位到具体书籍的记录。',
+        pad + 22,
+        startY + 60,
+      );
+    }
+    for (let i = 0; i < books.length; i++) {
+      const el = books[i],
+        b = state.books.find((x) => String(x.key) === String(el.dataset.bookKey)),
+        x = pad + (i % cols) * (cardW + gap),
+        y = startY + Math.floor(i / cols) * (cardH + gap);
+      roundedRect(ctx, x, y, cardW, cardH, 16, p.card, p.line);
+      drawCover(
+        ctx,
+        covers.get(el.dataset.bookKey),
+        x + 16,
+        y + 16,
+        126,
+        189,
+        b?.visualColor || b?.color || p.accent,
+        b?.title || '',
+        font,
+        p,
+      );
+      ctx.fillStyle = p.ink;
+      ctx.font = canvasFont(font, 20, 800);
+      ctx.fillText(fitText(ctx, b?.title || '未命名', cardW - 174), x + 158, y + 68);
+      ctx.fillStyle = p.muted;
+      ctx.font = canvasFont(font, 15, 500);
+      ctx.fillText(fitText(ctx, b?.author || '作者待补充', cardW - 174), x + 158, y + 101);
+      ctx.font = canvasFont(font, 14, 600);
+      ctx.fillText(
+        fitText(ctx, el.querySelector('.month-book-evidence')?.textContent || '', cardW - 174),
+        x + 158,
+        y + 136,
+      );
+      if (i && i % 9 === 0) await new Promise(requestAnimationFrame);
+      assertPreviewActive(active);
+    }
+    covers.forEach((bmp) => bmp?.close?.());
+    const summaryY = startY + (rows ? rows * (cardH + gap) : 130) + 35;
+    ctx.fillStyle = p.ink;
+    ctx.font = canvasFont(font, 23, 800);
+    ctx.fillText('月度小结', pad, summaryY);
+    ctx.fillStyle = p.muted;
+    ctx.font = canvasFont(font, 18, 500);
+    const max = W - pad * 2;
+    let line = '',
+      y = summaryY + 36;
+    for (const ch of summary) {
+      const next = line + ch;
+      if (ctx.measureText(next).width > max) {
+        ctx.fillText(line, pad, y);
+        line = ch;
+        y += 30;
+      } else line = next;
+    }
+    if (line) ctx.fillText(line, pad, y);
+    return canvasBlob(canvas);
+  }
+  function compactCalendarExport(card, clone) {
+    if (card.id !== 'monthCalendarWrap') return false;
+    const width = 1080;
+    clone.style.setProperty('width', width + 'px', 'important');
+    clone.style.setProperty('height', 'auto', 'important');
+    for (const grid of qa('.calendar-weekdays,.cover-calendar', clone)) {
+      grid.style.setProperty('width', 'auto', 'important');
+      grid.style.setProperty('grid-template-columns', 'repeat(7,minmax(0,1fr))', 'important');
+    }
+    for (const cell of qa('.cover-day,.calendar-blank', clone)) {
+      cell.style.setProperty('width', 'auto', 'important');
+      cell.style.setProperty('height', 'auto', 'important');
+      cell.style.setProperty('min-height', '0', 'important');
+      cell.style.setProperty('aspect-ratio', '1.12 / 1', 'important');
+    }
+    return true;
+  }
+  function measuredCloneHeight(clone, width, fallback) {
+    const shell = document.createElement('div');
+    shell.style.cssText = `position:fixed;left:-20000px;top:0;width:${width}px;visibility:hidden;pointer-events:none;contain:layout style`;
+    shell.appendChild(clone);
+    document.body.appendChild(shell);
+    const height = Math.ceil(
+      Math.max(clone.scrollHeight, clone.getBoundingClientRect().height, fallback),
+    );
+    clone.remove();
+    shell.remove();
+    return height;
+  }
+  async function captureNative(card, font, active) {
+    let width = Math.ceil(Math.max(card.scrollWidth, card.getBoundingClientRect().width)),
+      height = Math.ceil(Math.max(card.scrollHeight, card.getBoundingClientRect().height));
+    if (width > 12000 || height > 30000) throw new Error('模块尺寸超过安全导出范围');
+    const clone = card.cloneNode(true);
+    await inlineComputedStyles(card, clone, active);
+    await inlinePreviewImages(card, clone, active);
+    assertPreviewActive(active);
+    qa('.module-export-btn', clone).forEach((x) => x.remove());
+    if (font) {
+      for (const el of [clone, ...qa('*', clone)])
+        el.style.setProperty('font-family', `"${font.family}",serif`, 'important');
+    }
+    const compactCalendar = compactCalendarExport(card, clone);
+    if (compactCalendar) width = 1080;
+    clone.style.setProperty('width', width + 'px', 'important');
+    clone.style.setProperty('height', 'auto', 'important');
+    clone.style.margin = '0';
+    clone.style.transform = 'none';
+    height = measuredCloneHeight(clone, width, compactCalendar ? 1 : height);
+    if (height > 30000) throw new Error('模块尺寸超过安全导出范围');
+    const xml = new XMLSerializer().serializeToString(clone),
+      fontCss = font
+        ? `<style>@font-face{font-family:"${font.family}";src:url("${font.data}") format("woff");font-style:normal;font-weight:100 900;font-display:block}</style>`
+        : '',
+      svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml">${fontCss}${xml}</div></foreignObject></svg>`;
+    return { blob: new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }), width, height };
+  }
+  async function rasterizePreview(capture) {
+    const sourceUrl = URL.createObjectURL(capture.blob);
+    try {
+      const img = new Image();
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('PNG 生成超时')), 15000);
+        img.onload = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+        img.onerror = () => {
+          clearTimeout(timer);
+          reject(new Error('SVG 无法转为 PNG'));
+        };
+        img.src = sourceUrl;
+      });
+      const pixelLimit = 12000000,
+        dimensionLimit = 8192,
+        scale = Math.min(
+          1.5,
+          dimensionLimit / capture.width,
+          dimensionLimit / capture.height,
+          Math.sqrt(pixelLimit / (capture.width * capture.height)),
+        );
+      if (scale < 0.5) throw new Error('LONG_PREVIEW_SVG');
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(capture.width * scale));
+      canvas.height = Math.max(1, Math.round(capture.height * scale));
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('浏览器无法创建图片画布');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const png = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+      if (!png) throw new Error('PNG 编码失败');
+      canvas.width = 1;
+      canvas.height = 1;
+      return png;
+    } finally {
+      URL.revokeObjectURL(sourceUrl);
+    }
+  }
+  function clearPreviewUrl(d) {
+    if (d.dataset.previewUrl) {
+      URL.revokeObjectURL(d.dataset.previewUrl);
+      delete d.dataset.previewUrl;
+    }
+    delete d.dataset.previewExt;
+  }
+  function installPreviewDialog() {
+    if (q('#modulePreviewDialog')) return;
+    const d = document.createElement('div');
+    d.id = 'modulePreviewDialog';
+    d.className = 'feature-dialog';
+    d.innerHTML = `<div class="feature-panel"><div class="feature-panel-head"><b id="modulePreviewTitle">图片预览</b><div class="feature-panel-actions"><button class="primary-btn" id="downloadModuleImage" disabled>正在生成</button><button class="soft-btn" data-close-preview>关闭</button></div></div><div class="feature-font-row"><label for="moduleExportFont">导出字体</label><select id="moduleExportFont" class="feature-font-select"><option value="system">跟随网页</option><option value="lxgw">霞鹜新致宋</option><option value="clearhan">屏显臻宋</option><option value="huiwen">汇文明朝体</option></select><span class="feature-font-note">字体仅用于导出的图片；关闭预览后会释放字体内存</span></div><div class="feature-preview" id="modulePreview"><div class="feature-preview-status">正在生成预览……</div></div></div>`;
+    document.body.appendChild(d);
+    const picker = q('#moduleExportFont');
+    try {
+      const saved = localStorage.getItem('yueji-export-font-v1');
+      if (EXPORT_FONTS[saved]) picker.value = saved;
+    } catch {}
+    picker.onchange = () => {
+      try {
+        localStorage.setItem('yueji-export-font-v1', picker.value);
+      } catch {}
+      releaseExportFontCache();
+      generateModulePreview(d);
+    };
+    d.onclick = (e) => {
+      if (e.target === d || e.target.closest('[data-close-preview]')) {
+        d.dataset.job = String((+d.dataset.job || 0) + 1);
+        d.classList.remove('show');
+        clearPreviewUrl(d);
+        releaseExportFontCache();
+      }
+    };
+    q('#downloadModuleImage').onclick = () => {
+      const url = d.dataset.previewUrl;
+      if (!url) return;
+      const a = document.createElement('a');
+      a.download = (d.dataset.name || '阅迹') + '.' + (d.dataset.previewExt || 'png');
+      a.href = url;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    };
+  }
+  async function generateModulePreview(d) {
+    const card = d.__previewCard,
+      producer = d.__previewProducer;
+    if (!card && !producer) return;
+    const out = q('#modulePreview'),
+      download = q('#downloadModuleImage'),
+      job = String((+d.dataset.job || 0) + 1),
+      fontKey = chosenExportFont(),
+      active = () => d.dataset.job === job && d.classList.contains('show');
+    d.dataset.job = job;
+    clearPreviewUrl(d);
+    download.disabled = true;
+    download.textContent = '正在生成';
+    out.innerHTML = `<div class="feature-preview-status">${fontKey === 'system' ? '正在生成 PNG 预览……' : '正在加载字体并生成预览……'}</div>`;
+    try {
+      const font = await loadExportFont(fontKey);
+      assertPreviewActive(active);
+      let blob,
+        ext = 'png',
+        long = false;
+      if (producer) {
+        blob = await producer(font, active);
+      } else {
+        const capture = await captureNative(card, font, active);
+        assertPreviewActive(active);
+        try {
+          blob = await rasterizePreview(capture);
+        } catch (error) {
+          console.warn('PNG preview fell back to SVG', error);
+          blob = capture.blob;
+          ext = 'svg';
+          long = String(error?.message || error) === 'LONG_PREVIEW_SVG';
+        }
+      }
+      assertPreviewActive(active);
+      const url = URL.createObjectURL(blob);
+      d.dataset.previewUrl = url;
+      d.dataset.previewExt = ext;
+      const img = new Image();
+      img.alt = d.dataset.name || '模块预览';
+      img.src = url;
+      out.replaceChildren(img);
+      if (long) {
+        const note = document.createElement('div');
+        note.className = 'feature-preview-status';
+        note.textContent = '这个模块很长，已保留为清晰的 SVG，避免手机生成超大 PNG 时卡死。';
+        out.appendChild(note);
+      }
+      download.disabled = false;
+      download.textContent = ext === 'png' ? '保存 PNG' : '保存清晰图片';
+    } catch (e) {
+      if (String(e?.message || e) === 'PREVIEW_CANCELLED' || d.dataset.job !== job) return;
+      console.error(e);
+      download.disabled = true;
+      download.textContent = '生成失败';
+      out.innerHTML = `<div class="feature-preview-status">${fontKey === 'system' ? '这个模块暂时无法生成图片。' : '所选字体或图片生成失败。'}请重新选择字体或关闭后重试，页面数据没有受到影响。</div>`;
+    } finally {
+      if (d.dataset.job === job) releaseExportFontCache();
+    }
+  }
+  async function preparedCalendarPng(font, active) {
+    return renderCalendarPng(font, active);
+  }
+  function openModulePreview(card, name, producer = null) {
+    installPreviewDialog();
+    const d = q('#modulePreviewDialog');
+    d.__previewCard = card;
+    d.__previewProducer =
+      producer || (card?.id === 'monthCalendarWrap' ? preparedCalendarPng : null);
+    d.dataset.name = (name || '阅迹模块').replace(/[\\/:*?"<>|]/g, '-');
+    q('#modulePreviewTitle').textContent = name || '图片预览';
+    d.classList.add('show');
+    generateModulePreview(d);
+  }
+  async function preparedMonthlyPng(font, active) {
+    renderMonthly();
+    const grid = q('#monthSeenBooks'),
+      all = qa('.month-book[data-book-key]', grid),
+      overflow = all.slice(60),
+      summary = q('#monthSummary'),
+      originalSummary = summary?.textContent || '';
+    if (overflow.length) {
+      overflow.forEach((node) => node.remove());
+      if (summary)
+        summary.textContent = `${originalSummary} 导出图片为保证手机兼容展示前 60 本，另有 ${overflow.length} 本请在网页中查看。`;
+    }
+    try {
+      await hydrateCovers(grid);
+      await new Promise(requestAnimationFrame);
+      assertPreviewActive(active);
+      return await renderMonthlyPng(font, active);
+    } finally {
+      if (summary) summary.textContent = originalSummary;
+      overflow.forEach((node) => grid.appendChild(node));
+    }
+  }
+  function openMonthlyReportPreview() {
+    openModulePreview(null, q('#monthlyTitle')?.textContent || '阅读月报', preparedMonthlyPng);
+  }
+  function installMonthlyExport() {
+    const head = q('.monthly-head');
+    if (!head) return;
+    let button = q('.monthly-report-export', head);
+    if (!button) {
+      button = document.createElement('button');
+      button.className = 'module-export-btn monthly-report-export';
+      button.textContent = '预览 / 导出月报';
+      head.appendChild(button);
+    }
+    button.dataset.exportProducer = 'monthly';
+    button.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openMonthlyReportPreview();
+    };
+  }
+  function moduleName(card) {
+    return (
+      q('.section-title', card)?.textContent.trim() ||
+      q('.home-section-title b', card)?.textContent.trim() ||
+      q('h2,h3', card)?.textContent.trim() ||
+      '阅迹模块'
+    );
+  }
+  function decorateModules(root = document) {
+    qa('.page .card', root).forEach((card) => {
+      if (
+        card.id === 'libraryTools' ||
+        card.classList.contains('year-wall') ||
+        card.closest('#statsPanel-month')
+      )
+        return;
+      if (card.dataset.exportReady) return;
+      card.dataset.exportReady = '1';
+      const btn = document.createElement('button');
+      btn.className = 'module-export-btn';
+      btn.textContent = '预览 / 导出';
+      if (card.id === 'monthCalendarWrap') btn.dataset.exportProducer = 'calendar';
+      btn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openModulePreview(
+          card,
+          moduleName(card),
+          card.id === 'monthCalendarWrap' ? preparedCalendarPng : null,
+        );
+      };
+      const head = q(':scope > .section-head', card) || q(':scope > .home-section-title', card);
+      if (head) head.appendChild(btn);
+      else {
+        card.classList.add('export-corner');
+        card.prepend(btn);
+      }
+    });
+  }
 
-  function rgbHsl([r,g,b]){r/=255;g/=255;b/=255;const max=Math.max(r,g,b),min=Math.min(r,g,b),d=max-min;let h=0;if(d){if(max===r)h=((g-b)/d)%6;else if(max===g)h=(b-r)/d+2;else h=(r-g)/d+4;h*=60;if(h<0)h+=360}const l=(max+min)/2,s=d?d/(1-Math.abs(2*l-1)):0;return[h,s*100,l*100]}
-  function hslHex(h,s,l){s/=100;l/=100;const c=(1-Math.abs(2*l-1))*s,x=c*(1-Math.abs((h/60)%2-1)),m=l-c/2;let r=0,g=0,b=0;if(h<60)[r,g,b]=[c,x,0];else if(h<120)[r,g,b]=[x,c,0];else if(h<180)[r,g,b]=[0,c,x];else if(h<240)[r,g,b]=[0,x,c];else if(h<300)[r,g,b]=[x,0,c];else[r,g,b]=[c,0,x];return rgbHex((r+m)*255,(g+m)*255,(b+m)*255)}
-  function recolorEvolution(){const svg=q('#evolutionCanvas svg');if(!svg)return;const groups=qa('g[data-evo-i]',svg),[h,s]=rgbHsl(hexRgb(state.accent)),levels=[28,40,52,64,76];groups.forEach((group,index)=>{const circles=qa('circle',group),node=circles[circles.length-1];if(!node)return;const dataIndex=Number(group.dataset.evoI||index),light=levels[dataIndex%levels.length],c=hslHex(h,Math.max(48,Math.min(76,s+12)),light),evidence=group.dataset.evidenceSource;node.setAttribute('fill',c);node.setAttribute('fill-opacity','1');node.setAttribute('opacity','1');node.setAttribute('stroke',evidence==='weread'?'#34799a':evidence==='manual'?'#a8773f':evidence==='mixed'?'#593f73':light<48?'#f7fbf9':'#29463b');node.setAttribute('stroke-width',evidence&&evidence!=='moon'?'3':'2');if(evidence==='manual')node.setAttribute('stroke-dasharray','2 2');else node.removeAttribute('stroke-dasharray');group.dataset.evoTone=String(dataIndex%levels.length)});let legend=q('.evolution-theme-legend',q('#readingEvolutionCard'));if(!legend){legend=document.createElement('div');legend.className='evolution-theme-legend';q('#evolutionCanvas').after(legend)}const samples=levels.map(light=>hslHex(h,Math.max(48,Math.min(76,s+12)),light));legend.innerHTML='<span class="evo-depth-label">颜色深度</span>'+samples.map((color,i)=>`<span><i style="background:${color}"></i><b>${['最深','深','中','浅','最浅'][i]}</b></span>`).join('')+'<span class="evo-depth-note">填充始终跟随主题色；描边表示这颗圆的日期证据来源</span><span><i style="background:transparent;border:3px solid #34799a"></i><b>微信日期</b></span><span><i style="background:transparent;border:2px solid #29463b"></i><b>静读日期</b></span><span><i style="background:transparent;border:3px solid #a8773f"></i><b>手动日期</b></span>'}
+  function installObservers() {
+    const shelf = q('#bookshelf');
+    if (shelf)
+      new MutationObserver(() => colorizeWall()).observe(shelf, { childList: true, subtree: true });
+    q('#colorRow')?.addEventListener('click', () =>
+      setTimeout(() => {
+        qa('.wall-spine').forEach((x) => {
+          const b = state.books.find((y) => y.key === x.dataset.layoutBook);
+          if (b && !b.visualColor) {
+            const c = fallbackColor(b);
+            x.style.setProperty('--spine', c);
+          }
+        });
+      }, 0),
+    );
+  }
 
-  function installObservers(){const shelf=q('#bookshelf');if(shelf)new MutationObserver(()=>colorizeWall()).observe(shelf,{childList:true,subtree:true});const evo=q('#evolutionCanvas');if(evo)new MutationObserver(()=>recolorEvolution()).observe(evo,{childList:true,subtree:true});q('#colorRow')?.addEventListener('click',()=>setTimeout(()=>{recolorEvolution();qa('.wall-spine').forEach(x=>{const b=state.books.find(y=>y.key===x.dataset.layoutBook);if(b&&!b.visualColor){const c=fallbackColor(b);x.style.setProperty('--spine',c)}})},0));q('#customColor')?.addEventListener('input',()=>setTimeout(recolorEvolution,0))}
-
-  function install(){injectFeatureStyles();installPreviewDialog();installDelete();installHiddenManager();installDuplicateManager();installP1Diagnostics();installYearModes();installMonthlyExport();decorateModules();installObservers();colorizeWall();recolorEvolution()}
-  let tries=0;const wait=()=>{if(q('#yuejiLayoutStyles')&&typeof state!=='undefined'&&q('#bookSheet'))install();else if(tries++<80)setTimeout(wait,100)};document.readyState==='loading'?document.addEventListener('DOMContentLoaded',wait,{once:true}):wait();
+  function install() {
+    injectFeatureStyles();
+    installPreviewDialog();
+    installDelete();
+    installHiddenManager();
+    installDuplicateManager();
+    installP1Diagnostics();
+    installYearModes();
+    installMonthlyExport();
+    decorateModules();
+    installObservers();
+    colorizeWall();
+  }
+  let tries = 0;
+  const wait = () => {
+    if (q('#yuejiLayoutStyles') && typeof state !== 'undefined' && q('#bookSheet')) install();
+    else if (tries++ < 80) setTimeout(wait, 100);
+  };
+  document.readyState === 'loading'
+    ? document.addEventListener('DOMContentLoaded', wait, { once: true })
+    : wait();
 })();
