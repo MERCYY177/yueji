@@ -1,5 +1,6 @@
 const WE_READ_MARKER = '__YUEJI_WEREAD__';
 let refreshQueued = false;
+const watchedRoots = new WeakSet();
 
 function replaceText(root, from, to) {
   if (!root || !from) return;
@@ -12,14 +13,40 @@ function replaceText(root, from, to) {
   }
 }
 
+function sanitizeSettings(root) {
+  if (!root) return;
+  replaceText(root, '重新读取逐书进度/圆圈数据', '重新读取逐书进度');
+  replaceText(root, '请先点击“更新基础数据”', '请先点击“一键完整同步”');
+}
+
+function sanitizeNotes(root) {
+  if (root) replaceText(root, WE_READ_MARKER, '微信读书');
+}
+
 export function sanitizeReleaseUi(root = document) {
   const settings = root.querySelector?.('#wereadSettings') || document.getElementById('wereadSettings');
-  if (settings) {
-    replaceText(settings, '重新读取逐书进度/圆圈数据', '重新读取逐书进度');
-    replaceText(settings, '请先点击“更新基础数据”', '请先点击“一键完整同步”');
-  }
   const notes = root.querySelector?.('#notesList') || document.getElementById('notesList');
-  if (notes) replaceText(notes, WE_READ_MARKER, '微信读书');
+  sanitizeSettings(settings);
+  sanitizeNotes(notes);
+}
+
+function watchRoot(root, sanitizer) {
+  if (!root || watchedRoots.has(root)) return false;
+  watchedRoots.add(root);
+  sanitizer(root);
+  if ('MutationObserver' in window) {
+    new MutationObserver(() => sanitizer(root)).observe(root, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+  }
+  return true;
+}
+
+function attachTargetedObservers() {
+  watchRoot(document.getElementById('wereadSettings'), sanitizeSettings);
+  watchRoot(document.getElementById('notesList'), sanitizeNotes);
 }
 
 function activePageName() {
@@ -36,11 +63,11 @@ export function refreshActivePage() {
       window.renderBookOptions?.();
     } catch {}
     try {
-      if (pageName === 'today') window.renderToday?.();
-      if (pageName && typeof window.switchPage === 'function') window.switchPage(pageName);
-    } catch {}
-    try {
       if (pageName === 'notes') window.yuejiRenderChapterNotes?.();
+      else {
+        if (pageName === 'today') window.renderToday?.();
+        if (pageName && typeof window.switchPage === 'function') window.switchPage(pageName);
+      }
     } catch {}
     sanitizeReleaseUi();
   });
@@ -48,26 +75,14 @@ export function refreshActivePage() {
 
 function bootstrap() {
   sanitizeReleaseUi();
+  attachTargetedObservers();
   window.addEventListener('yueji:data-changed', refreshActivePage);
-  if ('MutationObserver' in window && document.body) {
-    new MutationObserver((records) => {
-      if (
-        records.some((record) =>
-          [...record.addedNodes].some(
-            (node) =>
-              node.nodeType === Node.ELEMENT_NODE &&
-              (node.matches?.('#wereadSettings,#notesList') ||
-                node.querySelector?.('#wereadSettings,#notesList')),
-          ),
-        )
-      )
-        sanitizeReleaseUi();
-      else {
-        const settings = document.getElementById('wereadSettings');
-        const notes = document.getElementById('notesList');
-        if (settings || notes) sanitizeReleaseUi();
-      }
-    }).observe(document.body, { childList: true, subtree: true, characterData: true });
+  if ('MutationObserver' in window && document.body && !document.getElementById('wereadSettings')) {
+    const discovery = new MutationObserver(() => {
+      attachTargetedObservers();
+      if (document.getElementById('wereadSettings')) discovery.disconnect();
+    });
+    discovery.observe(document.body, { childList: true, subtree: true });
   }
 }
 

@@ -1,10 +1,7 @@
 const STORAGE = 'yueji-archive-v1';
-const HIGHLIGHTS_DB = 'yueji-highlights-v1';
-const HIGHLIGHTS_STORE = 'highlights';
-const GATEWAY = '/.netlify/functions/weread-gateway';
-const SKILL_VERSION = '1.0.4';
 const PAGE_SIZE = 80;
 const WE_READ_MARKER = '__YUEJI_WEREAD__';
+const GATEWAY_PATH = '/.netlify/functions/weread-gateway';
 
 function normalizeText(value) {
   return String(value || '')
@@ -192,6 +189,90 @@ export function collapseDuplicateNotes(items = []) {
   return out;
 }
 
+const bookmarkChapterPatches = new Map();
+const reviewChapterPatches = new Map();
+
+function payloadData(payload) {
+  return payload?.data && typeof payload.data === 'object' ? payload.data : payload;
+}
+
+export function captureBookmarkChapterMetadata(payload = {}) {
+  const data = payloadData(payload) || {};
+  const rows = mergeBookmarksWithChapters(
+    Array.isArray(data.updated) ? data.updated : [],
+    Array.isArray(data.chapters) ? data.chapters : [],
+  );
+  for (const row of rows) {
+    if (!row?.bookmarkId) continue;
+    const patch = chapterPatchFromBookmark(row);
+    if (Object.keys(patch).length) bookmarkChapterPatches.set(String(row.bookmarkId), patch);
+  }
+  return bookmarkChapterPatches.size;
+}
+
+export function captureReviewChapterMetadata(payload = {}) {
+  const data = payloadData(payload) || {};
+  for (const item of Array.isArray(data.reviews) ? data.reviews : []) {
+    const review = item?.review || item;
+    if (!review?.reviewId) continue;
+    const patch = chapterPatchFromBookmark(review);
+    if (Object.keys(patch).length) reviewChapterPatches.set(String(review.reviewId), patch);
+  }
+  return reviewChapterPatches.size;
+}
+
+export function decorateWeReadRows(rows = []) {
+  return (Array.isArray(rows) ? rows : []).map((row) => {
+    if (row?.source !== 'weread' && row?.bookmark !== WE_READ_MARKER) return row;
+    const sourceId = String(row?.sourceId || '');
+    if (!sourceId) return row;
+    const patch = String(row.id || '').startsWith('wr-review:')
+      ? reviewChapterPatches.get(sourceId)
+      : bookmarkChapterPatches.get(sourceId);
+    return patch ? { ...row, ...patch } : row;
+  });
+}
+
+function installWeReadChapterCapture() {
+  if (typeof window === 'undefined' || window.__yuejiChapterCaptureInstalled) return;
+  window.__yuejiChapterCaptureInstalled = true;
+  const nativeFetch = window.fetch?.bind(window);
+  if (typeof nativeFetch === 'function') {
+    window.fetch = async (input, init) => {
+      const response = await nativeFetch(input, init);
+      try {
+        const url = typeof input === 'string' ? input : String(input?.url || '');
+        if (url.includes(GATEWAY_PATH) && typeof init?.body === 'string') {
+          const request = JSON.parse(init.body);
+          if (request?.api_name === '/book/bookmarklist')
+            captureBookmarkChapterMetadata(await response.clone().json());
+          else if (request?.api_name === '/review/list/mine')
+            captureReviewChapterMetadata(await response.clone().json());
+        }
+      } catch (error) {
+        console.warn('Yueji chapter metadata capture skipped', error);
+      }
+      return response;
+    };
+  }
+
+  const wrapWriter = () => {
+    const original = window.yuejiPutHighlights;
+    if (typeof original !== 'function' || original.__yuejiChapterWrapped) return false;
+    const wrapped = (rows) => original(decorateWeReadRows(rows));
+    wrapped.__yuejiChapterWrapped = true;
+    wrapped.__yuejiOriginal = original;
+    window.yuejiPutHighlights = wrapped;
+    return true;
+  };
+  if (!wrapWriter()) {
+    const timer = setInterval(() => {
+      if (wrapWriter()) clearInterval(timer);
+    }, 50);
+    setTimeout(() => clearInterval(timer), 10000);
+  }
+}
+
 function esc(value = '') {
   return String(value).replace(/[&<>"']/g, (m) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[m],
@@ -203,110 +284,19 @@ function formatDate(key) {
   return m ? `${m[1]}年${Number(m[2])}月${Number(m[3])}日` : String(key || '');
 }
 
-function loadState() {
+function loadJournals() {
   try {
-    const state = JSON.parse(localStorage.getItem(STORAGE) || '{}');
-    return {
-      books: Array.isArray(state.books) ? state.books : [],
-      journals: state.journals && typeof state.journals === 'object' ? state.journals : {},
-    };
+    const saved = JSON.parse(localStorage.getItem(STORAGE) || '{}');
+    return saved.journals && typeof saved.journals === 'object' ? saved.journals : {};
   } catch {
-    return { books: [], journals: {} };
+    return {};
   }
 }
 
-function getSkillKey() {
-  try {
-    return sessionStorage.getItem('yueji-weread-key') || localStorage.getItem('yueji-weread-key') || '';
-  } catch {
-    return '';
-  }
-}
-
-function highlightDb() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(HIGHLIGHTS_DB);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function enrichRows(book, bookmarks) {
-  if (!bookmarks.length) return 0;
-  const db = await highlightDb();
-  try {
-    const byId = new Map();
-    const byText = new Map();
-    for (const item of bookmarks) {
-      const patch = chapterPatchFromBookmark(item);
-      if (!Object.keys(patch).length) continue;
-      if (item.bookmarkId) byId.set(String(item.bookmarkId), patch);
-      const text = normalizeText(item.markText);
-      if (text && !byText.has(text)) byText.set(text, patch);
-    }
-    if (!byId.size && !byText.size) return 0;
-    return await new Promise((resolve, reject) => {
-      const tx = db.transaction(HIGHLIGHTS_STORE, 'readwrite');
-      const store = tx.objectStore(HIGHLIGHTS_STORE);
-      const index = store.index('bookKey');
-      const req = index.openCursor(IDBKeyRange.only(String(book.key)));
-      let changed = 0;
-      req.onsuccess = () => {
-        const cursor = req.result;
-        if (!cursor) return;
-        const row = cursor.value;
-        const sourceId = String(row.sourceId || '').trim();
-        const patch = byId.get(sourceId) || byText.get(normalizeText(row.quote));
-        if (patch) {
-          const next = { ...row, ...patch };
-          const different = Object.entries(patch).some(
-            ([key, value]) => String(row[key] ?? '') !== String(value ?? ''),
-          );
-          if (different) {
-            cursor.update(next);
-            changed++;
-          }
-        }
-        cursor.continue();
-      };
-      req.onerror = () => reject(req.error);
-      tx.oncomplete = () => resolve(changed);
-      tx.onerror = () => reject(tx.error);
-      tx.onabort = () => reject(tx.error);
-    });
-  } finally {
-    db.close();
-  }
-}
-
-const enrichedThisSession = new Set();
-async function enrichBookChapters(book) {
-  if (!book?.weReadBookId || enrichedThisSession.has(String(book.key))) return false;
-  const key = getSkillKey();
-  if (!key) return false;
-  try {
-    const res = await fetch(GATEWAY, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        api_name: '/book/bookmarklist',
-        skill_version: SKILL_VERSION,
-        bookId: book.weReadBookId,
-      }),
-    });
-    if (!res.ok) return false;
-    const payload = await res.json();
-    const data = payload?.data && typeof payload.data === 'object' ? payload.data : payload;
-    const rows = mergeBookmarksWithChapters(
-      Array.isArray(data?.updated) ? data.updated : [],
-      Array.isArray(data?.chapters) ? data.chapters : [],
-    );
-    enrichedThisSession.add(String(book.key));
-    return (await enrichRows(book, rows)) > 0;
-  } catch (error) {
-    console.warn('Yueji chapter enrichment skipped', error);
-    return false;
-  }
+function bookTitle(key) {
+  const select = document.getElementById('noteBookFilter');
+  const option = [...(select?.options || [])].find((item) => String(item.value) === String(key));
+  return String(option?.textContent || '').trim() || '未关联书籍';
 }
 
 let renderLimit = PAGE_SIZE;
@@ -321,12 +311,8 @@ function pageActive() {
   return document.querySelector(".page[data-page='notes']")?.classList.contains('active');
 }
 
-function bookOf(state, key) {
-  return state.books.find((book) => String(book.key) === String(key));
-}
-
-function journalRows(state) {
-  return Object.values(state.journals || {}).map((j) => ({
+function journalRows() {
+  return Object.values(loadJournals()).map((j) => ({
     id: `journal-${j.date}`,
     bookKey: String(j.bookKey || ''),
     date: j.date,
@@ -364,14 +350,13 @@ function chapterBlock(group) {
   return `<details class="chapter-group" open><summary><span>${esc(group.label)}</span><small>${group.items.length} 条</small><i>⌄</i></summary><div class="chapter-items">${group.items.map(noteCard).join('')}</div></details>`;
 }
 
-function bookBlock(state, key, notes, open) {
-  const book = bookOf(state, key);
+function bookBlock(key, notes, open) {
   const collapsed = collapseDuplicateNotes(notes);
   const groups = groupNotesByChapter(collapsed);
   const quoteCount = collapsed.filter((n) => String(n.quote || '').trim()).length;
   const thoughtCount = collapsed.filter((n) => String(n.thought || n.note || '').trim()).length;
   const chapterCount = groups.filter((group) => group.key !== '_unknown').length;
-  return `<details class="chapter-book" data-book-key="${esc(key)}" ${open ? 'open' : ''}><summary class="chapter-book-summary"><span><b>${esc(book?.title || '未关联书籍')}</b><small>${collapsed.length} 条 · ${quoteCount} 条摘录 · ${thoughtCount} 条感想${chapterCount ? ` · ${chapterCount} 个章节` : ''}</small></span><i>⌄</i></summary><div class="chapter-book-body">${groups.map(chapterBlock).join('')}</div></details>`;
+  return `<details class="chapter-book" data-book-key="${esc(key)}" ${open ? 'open' : ''}><summary class="chapter-book-summary"><span><b>${esc(bookTitle(key))}</b><small>${collapsed.length} 条 · ${quoteCount} 条摘录 · ${thoughtCount} 条感想${chapterCount ? ` · ${chapterCount} 个章节` : ''}</small></span><i>⌄</i></summary><div class="chapter-book-body">${groups.map(chapterBlock).join('')}</div></details>`;
 }
 
 export async function renderChapterNotes() {
@@ -385,12 +370,11 @@ export async function renderChapterNotes() {
     .trim()
     .toLowerCase();
   const kind = noteKind();
-  const state = loadState();
   try {
     if (window.yuejiHighlightsReady) await window.yuejiHighlightsReady;
     const result = await queryFn({ bookKey: selected, query, kind, limit: renderLimit + 1 });
     if (version !== renderVersion || !pageActive()) return;
-    const items = journalRows(state).filter((row) => noteMatches(row, selected, kind, query));
+    const items = journalRows().filter((row) => noteMatches(row, selected, kind, query));
     result.rows.slice(0, renderLimit).forEach((h) =>
       items.push({
         ...h,
@@ -414,24 +398,13 @@ export async function renderChapterNotes() {
     const more = Boolean(result.hasMore || result.rows.length > renderLimit);
     list.innerHTML = ordered.length
       ? `<div class="chapter-notes-root">${ordered
-          .map(([key, notes]) => bookBlock(state, key, notes, Boolean(selected)))
+          .map(([key, notes]) => bookBlock(key, notes, Boolean(selected)))
           .join('')}${more ? '<button class="soft-btn chapter-load-more" type="button">继续加载更多</button>' : ''}</div>`
       : '<div class="card empty-text">这里没有符合条件的内容。</div>';
     list.querySelector('.chapter-load-more')?.addEventListener('click', () => {
       renderLimit += PAGE_SIZE;
       renderChapterNotes();
     });
-    list.querySelectorAll('.chapter-book').forEach((details) => {
-      details.addEventListener('toggle', async () => {
-        if (!details.open) return;
-        const book = bookOf(state, details.dataset.bookKey);
-        if (await enrichBookChapters(book)) renderChapterNotes();
-      });
-    });
-    if (selected) {
-      const selectedBook = bookOf(state, selected);
-      if (await enrichBookChapters(selectedBook)) renderChapterNotes();
-    }
   } catch (error) {
     if (version === renderVersion)
       list.innerHTML =
@@ -480,7 +453,10 @@ function bootstrap() {
   if (pageActive()) scheduleRender(true);
 }
 
-if (typeof window !== 'undefined') window.yuejiRenderChapterNotes = renderChapterNotes;
+if (typeof window !== 'undefined') {
+  installWeReadChapterCapture();
+  window.yuejiRenderChapterNotes = renderChapterNotes;
+}
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   if (document.readyState === 'loading')
     document.addEventListener('DOMContentLoaded', bootstrap, { once: true });

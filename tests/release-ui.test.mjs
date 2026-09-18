@@ -27,3 +27,13 @@ test('release UI hides stale WeRead copy and internal markers', () => {
   assert.match(ui, /一键完整同步/);
   assert.match(ui, /__YUEJI_WEREAD__/);
 });
+
+test('release UI observes only target regions after discovery', () => {
+  assert.match(ui, /function watchRoot/);
+  assert.match(ui, /watchedRoots/);
+  assert.match(ui, /discovery\.disconnect\(\)/);
+  assert.doesNotMatch(
+    ui,
+    /else \{\s*const settings = document\.getElementById\('wereadSettings'\)/,
+  );
+});
