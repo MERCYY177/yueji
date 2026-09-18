@@ -129,6 +129,9 @@ function compactPayload(apiName, payload) {
           'range',
         ]),
       ),
+      chapters: (Array.isArray(source.chapters) ? source.chapters : []).map((chapter) =>
+        pick(chapter, ['chapterUid', 'chapterIdx', 'title']),
+      ),
     };
   else if (apiName === '/review/list/mine')
     data = {
