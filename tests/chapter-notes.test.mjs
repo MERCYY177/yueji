@@ -52,3 +52,34 @@ test('duplicate highlight and review collapse into one quote card with comment',
   assert.equal(merged.length, 1);
   assert.equal(merged[0].thought, '怎么写的我都要流泪了。');
 });
+
+test('bookmark rows inherit chapter title and order from the bookmark-list chapters table', async () => {
+  const { mergeBookmarksWithChapters } = await import(moduleUrl.href);
+  assert.deepEqual(
+    mergeBookmarksWithChapters(
+      [{ bookmarkId: 'b1', chapterUid: 9001, range: '128-146' }],
+      [{ chapterUid: 9001, chapterIdx: 3, title: '第四章' }],
+    ),
+    [
+      {
+        bookmarkId: 'b1',
+        chapterUid: 9001,
+        chapterIdx: 3,
+        chapterTitle: '第四章',
+        range: '128-146',
+      },
+    ],
+  );
+});
+
+test('repeated chapter titles stay separate and follow API chapter index order', async () => {
+  const { groupNotesByChapter } = await import(moduleUrl.href);
+  const groups = groupNotesByChapter([
+    { id: 'part2', chapterIdx: 20, chapterTitle: '第一章', quote: 'later' },
+    { id: 'part1', chapterIdx: 8, chapterTitle: '第一章', quote: 'earlier' },
+  ]);
+  assert.deepEqual(
+    groups.map((group) => group.items.map((item) => item.id)),
+    [['part1'], ['part2']],
+  );
+});
