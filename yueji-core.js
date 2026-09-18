@@ -43,7 +43,11 @@
     },
   };
 
-  window.Yueji = Object.assign(existing, { version: '20260911-r1', errors, boot });
+  window.Yueji = Object.assign(existing, { version: '20260918-r1', errors, boot });
+
+  import('./yueji-notes-chapters.js?v=20260918-r1').catch((error) => {
+    errors.capture(error, { area: 'notes', stage: 'chapter-layout', recoverable: true });
+  });
 
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     window.addEventListener(

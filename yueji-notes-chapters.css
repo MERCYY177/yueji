@@ -1,0 +1,195 @@
+:root {
+  --paper: #f5f6f8;
+  --card: #ffffff;
+  --soft: #f1f2f4;
+  --line: #e3e5e8;
+  --ink: #202124;
+  --muted: #74777d;
+  --shadow: 0 8px 24px rgba(20, 24, 28, 0.045);
+  --radius: 18px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #111214;
+    --card: #191b1e;
+    --soft: #22252a;
+    --line: #30343a;
+    --ink: #f1f2f4;
+    --muted: #9a9ea5;
+    --shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+  }
+}
+
+.page[data-page='notes'] > .card {
+  box-shadow: none;
+  border-radius: 16px;
+}
+
+.chapter-notes-root {
+  display: grid;
+  gap: 14px;
+}
+
+.chapter-book {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+  overflow: hidden;
+}
+
+.chapter-book-summary,
+.chapter-group > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.chapter-book-summary::-webkit-details-marker,
+.chapter-group > summary::-webkit-details-marker {
+  display: none;
+}
+
+.chapter-book-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 17px 18px;
+}
+
+.chapter-book-summary b,
+.chapter-book-summary small {
+  display: block;
+}
+
+.chapter-book-summary b {
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.chapter-book-summary small {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 0.73rem;
+}
+
+.chapter-book-summary > i,
+.chapter-group > summary > i {
+  font-style: normal;
+  color: var(--muted);
+  transition: transform 0.18s ease;
+}
+
+.chapter-book[open] > .chapter-book-summary > i,
+.chapter-group[open] > summary > i {
+  transform: rotate(180deg);
+}
+
+.chapter-book-body {
+  padding: 0 18px 22px;
+}
+
+.chapter-group {
+  padding-top: 26px;
+}
+
+.chapter-group + .chapter-group {
+  margin-top: 10px;
+}
+
+.chapter-group > summary {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 1fr auto 18px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 2px 10px;
+  background: color-mix(in srgb, var(--card) 94%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.chapter-group > summary > span {
+  font-family: 'Songti SC', 'STSong', serif;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.chapter-group > summary > small {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.chapter-items {
+  display: grid;
+  gap: 12px;
+}
+
+.chapter-note-card {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--card);
+}
+
+.chapter-note-location {
+  margin-bottom: 9px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.chapter-note-quote {
+  white-space: pre-wrap;
+  font-size: 0.98rem;
+  font-weight: 680;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+
+.chapter-note-comment {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 9px;
+  background: var(--soft);
+  color: var(--muted);
+  white-space: pre-wrap;
+  line-height: 1.68;
+  overflow-wrap: anywhere;
+}
+
+.chapter-note-card:not(.has-comment) .chapter-note-comment {
+  margin-top: 0;
+  color: var(--ink);
+}
+
+.chapter-note-card time {
+  display: block;
+  margin-top: 11px;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.chapter-load-more {
+  width: 100%;
+}
+
+@media (max-width: 620px) {
+  .chapter-book-body {
+    padding: 0 13px 18px;
+  }
+
+  .chapter-book-summary {
+    padding: 15px 14px;
+  }
+
+  .chapter-group {
+    padding-top: 22px;
+  }
+
+  .chapter-note-card {
+    padding: 16px;
+    border-radius: 10px;
+  }
+}
