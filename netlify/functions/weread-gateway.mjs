@@ -118,13 +118,32 @@ function compactPayload(apiName, payload) {
   else if (apiName === '/book/bookmarklist')
     data = {
       updated: (Array.isArray(source.updated) ? source.updated : []).map((item) =>
-        pick(item, ['bookmarkId', 'markText', 'createTime']),
+        pick(item, [
+          'bookmarkId',
+          'markText',
+          'createTime',
+          'chapterUid',
+          'chapterIdx',
+          'chapterTitle',
+          'chapterName',
+          'range',
+        ]),
       ),
     };
   else if (apiName === '/review/list/mine')
     data = {
       reviews: (Array.isArray(source.reviews) ? source.reviews : []).map((item) => ({
-        review: pick(item.review || item, ['reviewId', 'content', 'abstract', 'createTime']),
+        review: pick(item.review || item, [
+          'reviewId',
+          'content',
+          'abstract',
+          'createTime',
+          'chapterUid',
+          'chapterIdx',
+          'chapterTitle',
+          'chapterName',
+          'range',
+        ]),
       })),
       synckey: source.synckey,
       hasMore: Boolean(source.hasMore),
