@@ -14,10 +14,10 @@ test('bookmark gateway preserves chapter metadata needed by chapter notes', asyn
               markText: '测试划线',
               createTime: 1,
               chapterUid: 9001,
-              chapterIdx: 3,
               range: '128-146',
             },
           ],
+          chapters: [{ chapterUid: 9001, chapterIdx: 3, title: '第四章' }],
         },
       }),
       { status: 200, headers: { 'content-type': 'application/json' } },
@@ -26,7 +26,7 @@ test('bookmark gateway preserves chapter metadata needed by chapter notes', asyn
     const req = new Request('https://yueji.test/.netlify/functions/weread-gateway', {
       method: 'POST',
       headers: {
-        authorization: 'Bearer 12345678901234567890',
+        authorization: `Bearer ${'x'.repeat(24)}`,
         origin: 'https://yueji.test',
         'content-type': 'application/json',
       },
@@ -39,9 +39,11 @@ test('bookmark gateway preserves chapter metadata needed by chapter notes', asyn
       markText: '测试划线',
       createTime: 1,
       chapterUid: 9001,
-      chapterIdx: 3,
       range: '128-146',
     });
+    assert.deepEqual(body.data.chapters, [
+      { chapterUid: 9001, chapterIdx: 3, title: '第四章' },
+    ]);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -76,7 +78,7 @@ test('review gateway preserves chapter metadata when WeRead returns it', async (
     const req = new Request('https://yueji.test/.netlify/functions/weread-gateway', {
       method: 'POST',
       headers: {
-        authorization: 'Bearer 12345678901234567890',
+        authorization: `Bearer ${'x'.repeat(24)}`,
         origin: 'https://yueji.test',
         'content-type': 'application/json',
       },
