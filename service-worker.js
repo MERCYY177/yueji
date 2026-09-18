@@ -1,11 +1,13 @@
-const CACHE = 'yueji-shell-20260918-r1';
+const CACHE = 'yueji-shell-20260918-r2';
 const SHELL = [
   './',
   './index.html',
   './style.css',
+  './yueji-theme.css',
   './yueji-notes-chapters.css',
   './manifest.json',
   './yueji-core.js',
+  './yueji-release-ui.js',
   './yueji-notes-chapters.js',
   './app.js',
   './yueji-extension.js',
@@ -49,6 +51,11 @@ self.addEventListener('fetch', (event) => {
         }
         return response;
       })
-      .catch(() => caches.match(request).then((cached) => cached || caches.match('./index.html'))),
+      .catch(async () => {
+        const cached = await caches.match(request, { ignoreSearch: true });
+        if (cached) return cached;
+        if (request.mode === 'navigate') return caches.match('./index.html');
+        return Response.error();
+      }),
   );
 });

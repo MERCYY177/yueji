@@ -43,10 +43,24 @@
     },
   };
 
-  window.Yueji = Object.assign(existing, { version: '20260918-r1', errors, boot });
+  window.Yueji = Object.assign(existing, { version: '20260918-r2', errors, boot });
 
-  import('./yueji-notes-chapters.js?v=20260918-r1').catch((error) => {
+  if (!document.querySelector('link[data-yueji-theme]')) {
+    const theme = document.createElement('link');
+    theme.rel = 'stylesheet';
+    theme.href = './yueji-theme.css?v=20260918-r2';
+    theme.dataset.yuejiTheme = '1';
+    document.head.append(theme);
+  }
+  document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => {
+    if (!meta.media || meta.media.includes('light')) meta.content = '#f5f6f8';
+  });
+
+  import('./yueji-notes-chapters.js?v=20260918-r2').catch((error) => {
     errors.capture(error, { area: 'notes', stage: 'chapter-layout', recoverable: true });
+  });
+  import('./yueji-release-ui.js?v=20260918-r2').catch((error) => {
+    errors.capture(error, { area: 'ui', stage: 'release-refresh', recoverable: true });
   });
 
   if ('serviceWorker' in navigator && location.protocol === 'https:') {

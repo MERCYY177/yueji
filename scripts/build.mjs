@@ -6,9 +6,13 @@ await mkdir(output, { recursive: true });
 const entries = [
   'index.html',
   'style.css',
+  'yueji-theme.css',
   'manifest.json',
   'service-worker.js',
   'yueji-core.js',
+  'yueji-release-ui.js',
+  'yueji-notes-chapters.js',
+  'yueji-notes-chapters.css',
   'app.js',
   'yueji-extension.js',
   'yueji-p1-identity-migration.js',
@@ -33,4 +37,5 @@ for (const asset of [
   if (!html.includes(asset)) throw new Error(`Build output does not reference ${asset}`);
   await stat(`${output}/${asset}`);
 }
+await import('./verify-dist.mjs');
 console.log('Build OK: dist/');

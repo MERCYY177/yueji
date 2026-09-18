@@ -4,6 +4,7 @@ const HIGHLIGHTS_STORE = 'highlights';
 const GATEWAY = '/.netlify/functions/weread-gateway';
 const SKILL_VERSION = '1.0.4';
 const PAGE_SIZE = 80;
+const WE_READ_MARKER = '__YUEJI_WEREAD__';
 
 function normalizeText(value) {
   return String(value || '')
@@ -98,7 +99,9 @@ export function groupNotesByChapter(items = []) {
     if (!groups.has(meta.key)) groups.set(meta.key, { ...meta, items: [] });
     groups.get(meta.key).items.push(item);
   }
-  const out = [...groups.values()].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label, 'zh-CN'));
+  const out = [...groups.values()].sort(
+    (a, b) => a.order - b.order || a.label.localeCompare(b.label, 'zh-CN'),
+  );
   out.forEach((group) =>
     group.items.sort(
       (a, b) =>
@@ -141,31 +144,58 @@ export function mergeBookmarksWithChapters(bookmarks = [], chapters = []) {
   });
 }
 
+function mergeDuplicateInto(keep, item) {
+  if (!keep.thought && item.thought) keep.thought = item.thought;
+  if (!keep.note && item.note) keep.note = item.note;
+  const keepMeta = chapterMeta(keep);
+  const itemMeta = chapterMeta(item);
+  const shouldInheritChapter = keepMeta.key === '_unknown' && itemMeta.key !== '_unknown';
+  for (const field of ['chapterUid', 'chapterIdx', 'chapterTitle', 'chapterName', 'range', 'label']) {
+    if (
+      (shouldInheritChapter || keep[field] === undefined || keep[field] === '') &&
+      item[field] !== undefined &&
+      item[field] !== ''
+    )
+      keep[field] = item[field];
+  }
+  keep.time = Math.min(Number(keep.time || Infinity), Number(item.time || Infinity));
+}
+
 export function collapseDuplicateNotes(items = []) {
   const out = [];
   const byQuote = new Map();
   for (const raw of items) {
     const item = { ...raw };
     const quoteKey = normalizeText(item.quote);
-    const chapter = chapterMeta(item).key;
-    const key = quoteKey ? `${chapter}|${quoteKey}` : '';
-    if (!key || !byQuote.has(key)) {
+    if (!quoteKey) {
       out.push(item);
-      if (key) byQuote.set(key, item);
       continue;
     }
-    const keep = byQuote.get(key);
-    if (!keep.thought && item.thought) keep.thought = item.thought;
-    if (!keep.note && item.note) keep.note = item.note;
-    for (const field of ['chapterUid', 'chapterIdx', 'chapterTitle', 'range', 'label'])
-      if ((keep[field] === undefined || keep[field] === '') && item[field] !== undefined) keep[field] = item[field];
-    keep.time = Math.min(Number(keep.time || Infinity), Number(item.time || Infinity));
+    const itemMeta = chapterMeta(item);
+    const candidates = byQuote.get(quoteKey) || [];
+    const keep = candidates.find((existing) => {
+      const existingMeta = chapterMeta(existing);
+      return (
+        existingMeta.key === itemMeta.key ||
+        existingMeta.key === '_unknown' ||
+        itemMeta.key === '_unknown'
+      );
+    });
+    if (!keep) {
+      out.push(item);
+      candidates.push(item);
+      byQuote.set(quoteKey, candidates);
+      continue;
+    }
+    mergeDuplicateInto(keep, item);
   }
   return out;
 }
 
 function esc(value = '') {
-  return String(value).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[m]);
+  return String(value).replace(/[&<>"']/g, (m) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[m],
+  );
 }
 
 function formatDate(key) {
@@ -229,7 +259,9 @@ async function enrichRows(book, bookmarks) {
         const patch = byId.get(sourceId) || byText.get(normalizeText(row.quote));
         if (patch) {
           const next = { ...row, ...patch };
-          const different = Object.entries(patch).some(([key, value]) => String(row[key] ?? '') !== String(value ?? ''));
+          const different = Object.entries(patch).some(
+            ([key, value]) => String(row[key] ?? '') !== String(value ?? ''),
+          );
           if (different) {
             cursor.update(next);
             changed++;
@@ -270,8 +302,7 @@ async function enrichBookChapters(book) {
       Array.isArray(data?.chapters) ? data.chapters : [],
     );
     enrichedThisSession.add(String(book.key));
-    const changed = await enrichRows(book, rows);
-    return changed > 0;
+    return (await enrichRows(book, rows)) > 0;
   } catch (error) {
     console.warn('Yueji chapter enrichment skipped', error);
     return false;
@@ -311,13 +342,21 @@ function noteMatches(note, selected, kind, query) {
   if (selected && String(note.bookKey) !== String(selected)) return false;
   if (kind === 'quotes' && !String(note.quote || '').trim()) return false;
   if (kind === 'thoughts' && !String(note.thought || note.note || '').trim()) return false;
-  return !query || `${note.quote || ''} ${note.thought || note.note || ''} ${note.label || ''}`.toLowerCase().includes(query);
+  return (
+    !query ||
+    `${note.quote || ''} ${note.thought || note.note || ''} ${note.label || ''}`
+      .toLowerCase()
+      .includes(query)
+  );
 }
 
 function noteCard(note) {
   const quote = String(note.quote || '').trim();
   const thought = String(note.thought || note.note || '').trim();
-  const location = note.label && !/第?[零一二两三四五六七八九十百千\d]+[章节回]/.test(note.label) ? note.label : '';
+  const location =
+    note.label && !/第?[零一二两三四五六七八九十百千\d]+[章节回]/.test(note.label)
+      ? note.label
+      : '';
   return `<article class="chapter-note-card ${quote && thought ? 'has-comment' : ''}">${location ? `<div class="chapter-note-location">${esc(location)}</div>` : ''}${quote ? `<div class="chapter-note-quote">${esc(quote)}</div>` : ''}${thought ? `<div class="chapter-note-comment">${esc(thought)}</div>` : ''}<time>${esc(formatDate(note.date))}</time></article>`;
 }
 
@@ -342,7 +381,9 @@ export async function renderChapterNotes() {
   if (!list || typeof queryFn !== 'function') return;
   const version = ++renderVersion;
   const selected = document.getElementById('noteBookFilter')?.value || '';
-  const query = String(document.getElementById('noteSearch')?.value || '').trim().toLowerCase();
+  const query = String(document.getElementById('noteSearch')?.value || '')
+    .trim()
+    .toLowerCase();
   const kind = noteKind();
   const state = loadState();
   try {
@@ -355,7 +396,7 @@ export async function renderChapterNotes() {
         ...h,
         bookKey: String(h.bookKey || ''),
         thought: h.note || '',
-        label: h.bookmark === '__YUEJI_WEREAD__' ? '' : h.bookmark || '',
+        label: h.bookmark === WE_READ_MARKER ? '' : h.bookmark || '',
       }),
     );
     items.sort((a, b) => Number(b.time || b.sortTime || 0) - Number(a.time || a.sortTime || 0));
@@ -366,11 +407,15 @@ export async function renderChapterNotes() {
       groups.get(key).push(item);
     }
     const ordered = [...groups.entries()].sort(
-      (a, b) => Number(b[1][0]?.time || b[1][0]?.sortTime || 0) - Number(a[1][0]?.time || a[1][0]?.sortTime || 0),
+      (a, b) =>
+        Number(b[1][0]?.time || b[1][0]?.sortTime || 0) -
+        Number(a[1][0]?.time || a[1][0]?.sortTime || 0),
     );
     const more = Boolean(result.hasMore || result.rows.length > renderLimit);
     list.innerHTML = ordered.length
-      ? `<div class="chapter-notes-root">${ordered.map(([key, notes]) => bookBlock(state, key, notes, Boolean(selected))).join('')}${more ? '<button class="soft-btn chapter-load-more" type="button">继续加载更多</button>' : ''}</div>`
+      ? `<div class="chapter-notes-root">${ordered
+          .map(([key, notes]) => bookBlock(state, key, notes, Boolean(selected)))
+          .join('')}${more ? '<button class="soft-btn chapter-load-more" type="button">继续加载更多</button>' : ''}</div>`
       : '<div class="card empty-text">这里没有符合条件的内容。</div>';
     list.querySelector('.chapter-load-more')?.addEventListener('click', () => {
       renderLimit += PAGE_SIZE;
@@ -388,7 +433,9 @@ export async function renderChapterNotes() {
       if (await enrichBookChapters(selectedBook)) renderChapterNotes();
     }
   } catch (error) {
-    if (version === renderVersion) list.innerHTML = '<div class="card empty-text">书摘数据库暂时无法读取，请稍后重试。</div>';
+    if (version === renderVersion)
+      list.innerHTML =
+        '<div class="card empty-text">书摘数据库暂时无法读取，请稍后重试。</div>';
   }
 }
 
@@ -402,7 +449,7 @@ function injectStyle() {
   if (document.querySelector('link[data-yueji-chapter-notes]')) return;
   const link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = 'yueji-notes-chapters.css?v=20260918-r1';
+  link.href = 'yueji-notes-chapters.css?v=20260918-r2';
   link.dataset.yuejiChapterNotes = '1';
   document.head.append(link);
 }
@@ -416,7 +463,12 @@ function bootstrap() {
   search?.addEventListener('input', () => scheduleRender(true));
   filter?.addEventListener('change', () => scheduleRender(true));
   kind?.addEventListener('click', () => scheduleRender(true));
-  document.querySelector(".nav-btn[data-go='notes']")?.addEventListener('click', () => scheduleRender(true));
+  document.addEventListener('click', (event) => {
+    if (event.target.closest?.(".nav-btn[data-go='notes']")) scheduleRender(true);
+  });
+  window.addEventListener('yueji:data-changed', () => {
+    if (pageActive()) scheduleRender(false);
+  });
   if (list && 'MutationObserver' in window) {
     const observer = new MutationObserver(() => {
       if (!pageActive()) return;
@@ -428,7 +480,9 @@ function bootstrap() {
   if (pageActive()) scheduleRender(true);
 }
 
+if (typeof window !== 'undefined') window.yuejiRenderChapterNotes = renderChapterNotes;
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootstrap, { once: true });
+  if (document.readyState === 'loading')
+    document.addEventListener('DOMContentLoaded', bootstrap, { once: true });
   else bootstrap();
 }
