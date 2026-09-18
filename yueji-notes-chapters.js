@@ -47,15 +47,24 @@ function inferredChapterNumber(note) {
 
 export function chapterMeta(note = {}) {
   const title = String(note.chapterTitle || note.chapterName || '').trim();
+  const idx = Number(note.chapterIdx ?? note.chapterIndex);
   if (title) {
     const inferred = inferredChapterNumber({ chapterTitle: title });
     return {
-      key: note.chapterUid ? `uid:${note.chapterUid}` : `title:${title}`,
+      key: note.chapterUid
+        ? `uid:${note.chapterUid}`
+        : Number.isFinite(idx) && idx >= 0
+          ? `idx:${idx}`
+          : `title:${title}`,
       label: title,
-      order: Number.isFinite(inferred) ? inferred : Number.MAX_SAFE_INTEGER - 2,
+      order:
+        Number.isFinite(idx) && idx >= 0
+          ? idx + 1
+          : Number.isFinite(inferred)
+            ? inferred
+            : Number.MAX_SAFE_INTEGER - 2,
     };
   }
-  const idx = Number(note.chapterIdx ?? note.chapterIndex);
   if (Number.isFinite(idx) && idx >= 0) {
     const chapterNumber = idx + 1;
     return {
@@ -111,6 +120,25 @@ export function chapterPatchFromBookmark(item = {}) {
     patch.chapterTitle = String(item.chapterTitle || item.chapterName);
   if (item.range !== undefined && item.range !== null) patch.range = item.range;
   return patch;
+}
+
+export function mergeBookmarksWithChapters(bookmarks = [], chapters = []) {
+  const chapterByUid = new Map(
+    chapters
+      .filter((chapter) => chapter?.chapterUid !== undefined && chapter?.chapterUid !== null)
+      .map((chapter) => [String(chapter.chapterUid), chapter]),
+  );
+  return bookmarks.map((bookmark) => {
+    const chapter = chapterByUid.get(String(bookmark?.chapterUid ?? ''));
+    if (!chapter) return { ...bookmark };
+    return {
+      ...bookmark,
+      ...(chapter.chapterIdx !== undefined ? { chapterIdx: chapter.chapterIdx } : {}),
+      ...(chapter.title || chapter.chapterTitle || chapter.chapterName
+        ? { chapterTitle: String(chapter.title || chapter.chapterTitle || chapter.chapterName) }
+        : {}),
+    };
+  });
 }
 
 export function collapseDuplicateNotes(items = []) {
@@ -224,7 +252,6 @@ async function enrichBookChapters(book) {
   if (!book?.weReadBookId || enrichedThisSession.has(String(book.key))) return false;
   const key = getSkillKey();
   if (!key) return false;
-  enrichedThisSession.add(String(book.key));
   try {
     const res = await fetch(GATEWAY, {
       method: 'POST',
@@ -238,7 +265,11 @@ async function enrichBookChapters(book) {
     if (!res.ok) return false;
     const payload = await res.json();
     const data = payload?.data && typeof payload.data === 'object' ? payload.data : payload;
-    const rows = Array.isArray(data?.updated) ? data.updated : [];
+    const rows = mergeBookmarksWithChapters(
+      Array.isArray(data?.updated) ? data.updated : [],
+      Array.isArray(data?.chapters) ? data.chapters : [],
+    );
+    enrichedThisSession.add(String(book.key));
     const changed = await enrichRows(book, rows);
     return changed > 0;
   } catch (error) {
