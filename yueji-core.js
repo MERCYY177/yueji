@@ -43,7 +43,7 @@
     },
   };
 
-  window.Yueji = Object.assign(existing, { version: '20260918-r2', errors, boot });
+  window.Yueji = Object.assign(existing, { version: '20260919-r1', errors, boot });
 
   if (!document.querySelector('link[data-yueji-theme]')) {
     const theme = document.createElement('link');
@@ -56,9 +56,11 @@
     if (!meta.media || meta.media.includes('light')) meta.content = '#f5f6f8';
   });
 
-  import('./yueji-notes-chapters.js?v=20260918-r2').catch((error) => {
-    errors.capture(error, { area: 'notes', stage: 'chapter-layout', recoverable: true });
-  });
+  import('./yueji-notes-chapters.js?v=20260918-r2')
+    .then(() => import('./yueji-notes-entry.js?v=20260919-r1'))
+    .catch((error) => {
+      errors.capture(error, { area: 'notes', stage: 'chapter-layout', recoverable: true });
+    });
   import('./yueji-release-ui.js?v=20260918-r2').catch((error) => {
     errors.capture(error, { area: 'ui', stage: 'release-refresh', recoverable: true });
   });
