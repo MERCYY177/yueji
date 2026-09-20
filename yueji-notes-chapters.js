@@ -89,6 +89,14 @@ function rangeStart(value) {
   return match ? Number(match[0]) : Number.MAX_SAFE_INTEGER;
 }
 
+function rangeIdentity(note = {}) {
+  const value = note.range ?? note.chapterRange ?? note.position;
+  if (value === undefined || value === null || value === '') return '';
+  const raw = Array.isArray(value) ? value.join('-') : String(value);
+  const numbers = raw.match(/\d+/g);
+  return numbers?.length ? numbers.join('-') : raw.trim();
+}
+
 export function groupNotesByChapter(items = []) {
   const groups = new Map();
   for (const item of items) {
@@ -169,9 +177,12 @@ export function collapseDuplicateNotes(items = []) {
       continue;
     }
     const itemMeta = chapterMeta(item);
+    const itemRange = rangeIdentity(item);
     const candidates = byQuote.get(quoteKey) || [];
     const keep = candidates.find((existing) => {
       const existingMeta = chapterMeta(existing);
+      const existingRange = rangeIdentity(existing);
+      if (existingRange && itemRange && existingRange !== itemRange) return false;
       return (
         existingMeta.key === itemMeta.key ||
         existingMeta.key === '_unknown' ||
@@ -301,7 +312,6 @@ function bookTitle(key) {
 
 let renderLimit = PAGE_SIZE;
 let renderVersion = 0;
-let scheduled = 0;
 
 function noteKind() {
   return document.querySelector('#noteKindSeg button.active')?.dataset.kind || 'all';
@@ -359,7 +369,8 @@ function bookBlock(key, notes, open) {
   return `<details class="chapter-book" data-book-key="${esc(key)}" ${open ? 'open' : ''}><summary class="chapter-book-summary"><span><b>${esc(bookTitle(key))}</b><small>${collapsed.length} 条 · ${quoteCount} 条摘录 · ${thoughtCount} 条感想${chapterCount ? ` · ${chapterCount} 个章节` : ''}</small></span><i>⌄</i></summary><div class="chapter-book-body">${groups.map(chapterBlock).join('')}</div></details>`;
 }
 
-export async function renderChapterNotes() {
+export async function renderChapterNotes(options = {}) {
+  if (options?.reset) renderLimit = PAGE_SIZE;
   if (typeof document === 'undefined' || !pageActive()) return;
   const list = document.getElementById('notesList');
   const queryFn = window.yuejiQueryHighlights;
@@ -412,12 +423,6 @@ export async function renderChapterNotes() {
   }
 }
 
-function scheduleRender(reset = false) {
-  if (reset) renderLimit = PAGE_SIZE;
-  clearTimeout(scheduled);
-  scheduled = setTimeout(() => renderChapterNotes(), 0);
-}
-
 function injectStyle() {
   if (document.querySelector('link[data-yueji-chapter-notes]')) return;
   const link = document.createElement('link');
@@ -429,28 +434,7 @@ function injectStyle() {
 
 function bootstrap() {
   injectStyle();
-  const list = document.getElementById('notesList');
-  const search = document.getElementById('noteSearch');
-  const filter = document.getElementById('noteBookFilter');
-  const kind = document.getElementById('noteKindSeg');
-  search?.addEventListener('input', () => scheduleRender(true));
-  filter?.addEventListener('change', () => scheduleRender(true));
-  kind?.addEventListener('click', () => scheduleRender(true));
-  document.addEventListener('click', (event) => {
-    if (event.target.closest?.(".nav-btn[data-go='notes']")) scheduleRender(true);
-  });
-  window.addEventListener('yueji:data-changed', () => {
-    if (pageActive()) scheduleRender(false);
-  });
-  if (list && 'MutationObserver' in window) {
-    const observer = new MutationObserver(() => {
-      if (!pageActive()) return;
-      if (list.querySelector('.chapter-notes-root')) return;
-      scheduleRender(false);
-    });
-    observer.observe(list, { childList: true });
-  }
-  if (pageActive()) scheduleRender(true);
+  if (pageActive()) renderChapterNotes({ reset: true });
 }
 
 if (typeof window !== 'undefined') {
