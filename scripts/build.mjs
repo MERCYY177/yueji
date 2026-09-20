@@ -12,6 +12,7 @@ const entries = [
   'yueji-core.js',
   'yueji-release-ui.js',
   'yueji-notes-chapters.js',
+  'yueji-notes-entry.js',
   'yueji-notes-chapters.css',
   'app.js',
   'yueji-extension.js',

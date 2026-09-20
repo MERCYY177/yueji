@@ -53,6 +53,25 @@ test('duplicate highlight and review collapse into one quote card with comment',
   assert.equal(merged[0].thought, '怎么写的我都要流泪了。');
 });
 
+test('same quote at different ranges stays as separate notes', async () => {
+  const { collapseDuplicateNotes } = await import(moduleUrl.href);
+  const merged = collapseDuplicateNotes([
+    { id: 'first', quote: '是的。', chapterIdx: 3, range: '100-102' },
+    { id: 'second', quote: '是的。', chapterIdx: 3, range: '968-970' },
+  ]);
+  assert.equal(merged.length, 2);
+});
+
+test('same quote at the same range can still collapse into one annotated note', async () => {
+  const { collapseDuplicateNotes } = await import(moduleUrl.href);
+  const merged = collapseDuplicateNotes([
+    { id: 'mark', quote: '是的。', chapterIdx: 3, range: '100-102' },
+    { id: 'review', quote: '是的。', thought: '这里很重要', chapterIdx: 3, range: '100-102' },
+  ]);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].thought, '这里很重要');
+});
+
 test('bookmark rows inherit chapter title and order from the bookmark-list chapters table', async () => {
   const { mergeBookmarksWithChapters } = await import(moduleUrl.href);
   assert.deepEqual(

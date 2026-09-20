@@ -1,4 +1,4 @@
-const CACHE = 'yueji-shell-20260918-r2';
+const CACHE = 'yueji-shell-20260919-r1';
 const SHELL = [
   './',
   './index.html',
@@ -9,6 +9,7 @@ const SHELL = [
   './yueji-core.js',
   './yueji-release-ui.js',
   './yueji-notes-chapters.js',
+  './yueji-notes-entry.js',
   './app.js',
   './yueji-extension.js',
   './yueji-p1-identity-migration.js',

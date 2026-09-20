@@ -66,12 +66,14 @@ test('normal sync responses decorate rows with chapter metadata without extra ga
   assert.match(source, /window\.yuejiPutHighlights\s*=\s*wrapped/);
 });
 
-test('chapter runtime survives nav rebuilds and avoids localStorage book metadata', async () => {
+test('chapter runtime has one external render trigger path', async () => {
   const source = await readFile(new URL('../yueji-notes-chapters.js', import.meta.url), 'utf8');
-  assert.match(source, /document\.addEventListener\(['"]click['"]/);
-  assert.match(source, /yueji:data-changed/);
   assert.match(source, /window\.yuejiRenderChapterNotes\s*=\s*renderChapterNotes/);
   assert.match(source, /yueji-notes-chapters\.css\?v=20260918-r2/);
-  assert.match(source, /noteBookFilter/);
+  assert.doesNotMatch(source, /search\?\.addEventListener\(['"]input['"]/);
+  assert.doesNotMatch(source, /filter\?\.addEventListener\(['"]change['"]/);
+  assert.doesNotMatch(source, /kind\?\.addEventListener\(['"]click['"]/);
+  assert.doesNotMatch(source, /yueji:data-changed/);
+  assert.doesNotMatch(source, /new MutationObserver/);
   assert.doesNotMatch(source, /books:\s*Array\.isArray\(saved\.books\)/);
 });
