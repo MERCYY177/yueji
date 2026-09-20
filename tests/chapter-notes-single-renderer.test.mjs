@@ -15,3 +15,13 @@ test('app note renders are owned by the chapter notes entry and reset chapter pa
   assert.match(entry, /window\.yuejiRenderChapterNotes/);
   assert.match(entry, /renderer\(\{\s*reset:\s*true\s*\}\)/);
 });
+
+test('chapter notes entry installs immediately when app is ready and only defers when needed', async () => {
+  const entry = await readFile(entryUrl, 'utf8');
+  assert.match(entry, /typeof renderNotes/);
+  assert.match(entry, /return true/);
+  assert.match(
+    entry,
+    /!installChapterNotesEntry\(\)\s*&&\s*document\.readyState\s*===\s*['"]loading['"]/,
+  );
+});
