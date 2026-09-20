@@ -1,6 +1,6 @@
 export function chapterNotesRenderEntry() {
   const renderer = window.yuejiRenderChapterNotes;
-  if (typeof renderer === 'function') return renderer();
+  if (typeof renderer === 'function') return renderer({ reset: true });
 }
 
 function installChapterNotesEntry() {
