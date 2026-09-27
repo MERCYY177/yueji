@@ -75,9 +75,11 @@
   import('./yueji-release-ui.js?v=20260918-r2').catch((error) => {
     errors.capture(error, { area: 'ui', stage: 'release-refresh', recoverable: true });
   });
-  import('./yueji-unified.js?v=20260927-unified').catch((error) => {
-    errors.capture(error, { area: 'ui', stage: 'unified-layout', recoverable: true });
-  });
+  import('./yueji-sync-gate.js?v=20260927-unified')
+    .then(() => import('./yueji-unified.js?v=20260927-unified'))
+    .catch((error) => {
+      errors.capture(error, { area: 'ui', stage: 'unified-layout', recoverable: true });
+    });
   import('./yueji-appearance.js?v=20260927-unified').catch((error) => {
     errors.capture(error, { area: 'ui', stage: 'appearance-export', recoverable: true });
   });
