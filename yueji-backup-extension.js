@@ -23,6 +23,7 @@
   }
 
   function refreshVisibleSettings(meta) {
+    if (typeof document === 'undefined') return;
     const profile = meta?.profile || {};
     const appearance = meta?.appearance || {};
     const nickname = document.getElementById('yuejiNickname');
