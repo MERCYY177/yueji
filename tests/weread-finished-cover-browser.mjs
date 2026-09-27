@@ -4,9 +4,7 @@ import { chromium } from 'playwright-core';
 const chrome = process.env.CHROME_BIN;
 if (!chrome) throw new Error('CHROME_BIN is required');
 const GATEWAY = 'https://yueji-weread-gateway.xiaoshu10088.workers.dev/api/weread';
-const cover =
-  'data:image/svg+xml;charset=utf-8,' +
-  encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="180"><rect width="120" height="180" fill="#789"/><text x="60" y="90" text-anchor="middle" fill="white">CRIME</text></svg>');
+const cover = 'https://covers.test/crime.svg';
 const finishTime = Math.floor(new Date('2026-09-27T09:30:00+08:00').getTime() / 1000);
 
 const browser = await chromium.launch({
@@ -19,6 +17,15 @@ try {
   const context = await browser.newContext();
   const page = await context.newPage();
   const gatewayRequests = [];
+
+  await page.route(cover, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'image/svg+xml',
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="180"><rect width="120" height="180" fill="#789"/><text x="60" y="90" text-anchor="middle" fill="white">CRIME</text></svg>',
+    });
+  });
+
   await page.route(GATEWAY, async (route) => {
     const body = route.request().postDataJSON?.() || {};
     gatewayRequests.push(body);
@@ -88,124 +95,77 @@ try {
 
   await page.waitForFunction(() => typeof window.Yueji?.reconcileWeReadFinishedBooks === 'function');
   await page.waitForSelector('#wereadSettings', { state: 'attached', timeout: 15000 });
-
-  const before = await page.evaluate(() => {
-    let live = null;
-    try {
-      live = typeof state !== 'undefined' ? state : null;
-    } catch {}
-    const persisted = JSON.parse(localStorage.getItem('yueji-archive-v1') || '{}');
-    return {
-      liveBooks: (live?.books || []).map((b) => ({
-        key: b.key,
-        title: b.title,
-        weReadBookId: b.weReadBookId,
-        progress: b.progress,
-        status: b.status,
-        finishReading: b.finishReading,
-        finishedDate: b.finishedDate,
-      })),
-      liveShelf: (live?.weRead?.shelfBooks || []).map((b) => ({
-        bookId: b.bookId,
-        finishReading: b.finishReading,
-        cover: Boolean(b.cover),
-      })),
-      persistedBooks: (persisted.books || []).map((b) => ({
-        key: b.key,
-        weReadBookId: b.weReadBookId,
-        progress: b.progress,
-        status: b.status,
-      })),
-      persistedShelf: (persisted.weRead?.shelfBooks || []).length,
-      errors: window.Yueji?.errors?.history || [],
-    };
+  await page.evaluate(async () => {
+    await window.Yueji.reconcileWeReadFinishedBooks({ fetchMissingDates: true });
   });
-  console.log(`[finished diagnostics:before] ${JSON.stringify(before)}`);
-
-  const reconcileResult = await page.evaluate(async () =>
-    window.Yueji.reconcileWeReadFinishedBooks({ fetchMissingDates: true }),
-  );
-  const after = await page.evaluate(() => {
-    let live = null;
-    try {
-      live = typeof state !== 'undefined' ? state : null;
-    } catch {}
-    const persisted = JSON.parse(localStorage.getItem('yueji-archive-v1') || '{}');
-    return {
-      liveBooks: (live?.books || []).map((b) => ({
-        key: b.key,
-        title: b.title,
-        weReadBookId: b.weReadBookId,
-        progress: b.progress,
-        status: b.status,
-        finishReading: b.finishReading,
-        finishedDate: b.finishedDate,
-        weReadCover: Boolean(b.weReadCover),
-      })),
-      liveShelf: (live?.weRead?.shelfBooks || []).map((b) => ({
-        bookId: b.bookId,
-        finishReading: b.finishReading,
-        cover: Boolean(b.cover),
-      })),
-      persistedBooks: (persisted.books || []).map((b) => ({
-        key: b.key,
-        weReadBookId: b.weReadBookId,
-        progress: b.progress,
-        status: b.status,
-        finishedDate: b.finishedDate,
-      })),
-      persistedShelf: (persisted.weRead?.shelfBooks || []).length,
-      errors: window.Yueji?.errors?.history || [],
-    };
-  });
-  console.log(`[finished diagnostics:after] ${JSON.stringify({ reconcileResult, gatewayRequests, after })}`);
 
   await page.waitForFunction(() => {
     try {
-      if (typeof state !== 'undefined') {
-        const book = state.books?.find((item) => item.weReadBookId === 'crime-weread');
-        if (book?.progress === 100 && book?.status === 'done' && book?.finishedDate === '2026-09-27')
-          return true;
-      }
-    } catch {}
-    const data = JSON.parse(localStorage.getItem('yueji-archive-v1') || '{}');
-    const book = data.books?.find((item) => item.weReadBookId === 'crime-weread');
-    return book?.progress === 100 && book?.status === 'done' && book?.finishedDate === '2026-09-27';
+      const book = state.books?.find((item) => item.weReadBookId === 'crime-weread');
+      return book?.progress === 100 && book?.status === 'done' && book?.finishedDate === '2026-09-27';
+    } catch {
+      return false;
+    }
   });
 
-  const repaired = await page.evaluate(() => {
-    try {
-      if (typeof state !== 'undefined') {
-        const book = state.books?.find((item) => item.weReadBookId === 'crime-weread');
-        if (book) return book;
-      }
-    } catch {}
-    const data = JSON.parse(localStorage.getItem('yueji-archive-v1') || '{}');
-    return data.books.find((item) => item.weReadBookId === 'crime-weread');
-  });
+  const repaired = await page.evaluate(() =>
+    state.books.find((item) => item.weReadBookId === 'crime-weread'),
+  );
   assert.equal(repaired.progress, 100);
   assert.equal(repaired.status, 'done');
   assert.equal(repaired.finishedDate, '2026-09-27');
   assert.equal(repaired.weReadCover, cover);
 
   await page.evaluate(() => {
+    if (!state.sessions.some((row) => row.id === 'crime-month-browser')) {
+      state.sessions.push({
+        id: 'crime-month-browser',
+        date: '2026-09-27',
+        bookKey: 'crime',
+        minutes: 30,
+        source: 'weread',
+      });
+    }
+    document.getElementById('monthPicker').value = '2026-09';
+    renderMonthly();
+  });
+
+  await page.waitForFunction(
+    ({ cover }) => {
+      const finished = document.getElementById('monthFinished')?.textContent || '';
+      const img = document.querySelector('#monthSeenBooks img[data-cover-key="crime"]');
+      return finished.includes('罪与罚') && img?.getAttribute('src') === cover;
+    },
+    { cover },
+  );
+
+  const monthly = await page.evaluate(() => ({
+    finished: document.getElementById('monthFinished')?.textContent || '',
+    src: document.querySelector('#monthSeenBooks img[data-cover-key="crime"]')?.getAttribute('src') || '',
+  }));
+  assert.match(monthly.finished, /罪与罚/);
+  assert.equal(monthly.src, cover);
+
+  await page.evaluate(() => {
     const year = document.getElementById('yearWallYear');
     if (year) year.value = '2026';
     window.renderYearWall?.();
-    window.Yueji?.applyYearCoverFallbacks?.();
+    window.Yueji?.applyCoverFallbacks?.();
   });
-  await page.waitForFunction(() => {
-    const img = document.querySelector('#yearWallPreview img[data-cover-key="crime"]');
-    return Boolean(img?.dataset.coverFallback && img.getAttribute('src'));
-  });
-  const image = await page.locator('#yearWallPreview img[data-cover-key="crime"]').evaluate((img) => ({
-    fallback: img.dataset.coverFallback,
-    src: img.getAttribute('src'),
-  }));
-  assert.equal(image.fallback, cover);
-  assert.equal(image.src, cover);
+  await page.waitForFunction(
+    ({ cover }) => {
+      const img = document.querySelector('#yearWallPreview img[data-cover-key="crime"]');
+      return img?.getAttribute('src') === cover;
+    },
+    { cover },
+  );
 
-  console.log('Browser regression OK: WeRead finished state repaired and annual wall uses source cover fallback');
+  const yearly = await page.locator('#yearWallPreview img[data-cover-key="crime"]').getAttribute('src');
+  assert.equal(yearly, cover);
+
+  console.log(
+    `Browser regression OK: monthly finished + monthly/year covers use live WeRead state; gateway requests=${gatewayRequests.length}`,
+  );
 } finally {
   await browser.close();
 }
