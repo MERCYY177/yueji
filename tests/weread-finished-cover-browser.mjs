@@ -50,51 +50,47 @@ try {
   });
 
   await page.goto('http://127.0.0.1:4173/', { waitUntil: 'load' });
-  await page.evaluate(
-    ({ cover }) => {
-      localStorage.setItem(
-        'yueji-archive-v1',
-        JSON.stringify({
-          source: '微信读书',
-          accent: '#5f8f7b',
-          books: [
-            {
-              key: 'crime',
-              title: '罪与罚',
-              author: '陀思妥耶夫斯基',
-              sources: ['weread'],
-              weReadBookId: 'crime-weread',
-              progress: 0,
-              status: 'unread',
-              cover: '',
-              weReadCover: '',
-            },
-          ],
-          sessions: [],
-          journals: {},
-          highlights: [],
-          weRead: {
-            shelfBooks: [
-              {
-                bookId: 'crime-weread',
-                title: '罪与罚',
-                author: '陀思妥耶夫斯基',
-                finishReading: '1',
-                cover,
-              },
-            ],
-          },
-          importedAt: '2026-09-27T00:00:00.000Z',
-        }),
-      );
-      sessionStorage.setItem('yueji-weread-key', 'browser-finished-key-1234567890');
-    },
-    { cover },
-  );
+  await page.evaluate(() => {
+    sessionStorage.setItem('yueji-weread-key', 'browser-finished-key-1234567890');
+  });
   await page.reload({ waitUntil: 'load' });
 
   await page.waitForFunction(() => typeof window.Yueji?.reconcileWeReadFinishedBooks === 'function');
   await page.waitForSelector('#wereadSettings', { state: 'attached', timeout: 15000 });
+
+  // Full WeRead books/shelf live in the extension's IndexedDB-backed runtime state,
+  // not in compact localStorage. Seed the regression at that authoritative layer so
+  // this test cannot race the asynchronous IndexedDB restore step.
+  await page.evaluate(({ cover }) => {
+    state.source = '微信读书';
+    state.books = [
+      {
+        key: 'crime',
+        title: '罪与罚',
+        author: '陀思妥耶夫斯基',
+        sources: ['weread'],
+        weReadBookId: 'crime-weread',
+        progress: 0,
+        status: 'unread',
+        cover: '',
+        weReadCover: '',
+      },
+    ];
+    state.sessions = [];
+    state.weRead = {
+      ...(state.weRead || {}),
+      shelfBooks: [
+        {
+          bookId: 'crime-weread',
+          title: '罪与罚',
+          author: '陀思妥耶夫斯基',
+          finishReading: '1',
+          cover,
+        },
+      ],
+    };
+  }, { cover });
+
   await page.evaluate(async () => {
     await window.Yueji.reconcileWeReadFinishedBooks({ fetchMissingDates: true });
   });
