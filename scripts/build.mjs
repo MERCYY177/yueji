@@ -26,6 +26,8 @@ const entries = [
   'yueji-weread-reading.js',
   'yueji-unified-ui-model.js',
   'yueji-unified.js',
+  'yueji-appearance-model.js',
+  'yueji-appearance.js',
   'netlify.toml',
   'assets',
   'vendor',
@@ -47,6 +49,8 @@ for (const asset of [
   'yueji-weread-reading.js',
   'yueji-unified-ui-model.js',
   'yueji-unified.js',
+  'yueji-appearance-model.js',
+  'yueji-appearance.js',
 ]) await stat(`${output}/${asset}`);
 await import('./verify-dist.mjs');
 console.log('Build OK: dist/');
