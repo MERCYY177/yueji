@@ -66,7 +66,7 @@
   };
 
   window.Yueji = Object.assign(existing, {
-    version: '20260927-github-pages',
+    version: '20260927-finished-cover',
     errors,
     boot,
     wereadGateway: WEREAD_GATEWAY,
@@ -113,22 +113,37 @@
       errors.capture(error, { area: 'ui', stage: 'appearance-export', recoverable: true });
     });
 
-  // This bridge must run as a classic script after app.js so it can wrap the
-  // existing portable backup functions without duplicating their book/highlight/cover logic.
+  function appendClassicBridge(src, dataKey, area, stage) {
+    if (document.querySelector(`script[${dataKey}]`)) return;
+    const script = document.createElement('script');
+    script.src = src;
+    script.setAttribute(dataKey, '1');
+    script.onerror = () =>
+      errors.capture(new Error(`${stage} failed to load`), {
+        area,
+        stage,
+        recoverable: true,
+      });
+    document.body.append(script);
+  }
+
+  // These bridges must run as classic scripts after app.js/yueji-extension.js so
+  // they can share the existing global archive state without duplicating it.
   document.addEventListener(
     'DOMContentLoaded',
     () => {
-      if (document.querySelector('script[data-yueji-backup-extension]')) return;
-      const script = document.createElement('script');
-      script.src = './yueji-backup-extension.js?v=20260927-unified';
-      script.dataset.yuejiBackupExtension = '1';
-      script.onerror = () =>
-        errors.capture(new Error('backup extension failed to load'), {
-          area: 'backup',
-          stage: 'unified-metadata',
-          recoverable: true,
-        });
-      document.body.append(script);
+      appendClassicBridge(
+        './yueji-backup-extension.js?v=20260927-unified',
+        'data-yueji-backup-extension',
+        'backup',
+        'unified-metadata',
+      );
+      appendClassicBridge(
+        './yueji-weread-finished-cover-fix.js?v=20260927-finished-cover',
+        'data-yueji-weread-finished-cover-fix',
+        'weread',
+        'finished-cover-repair',
+      );
     },
     { once: true },
   );
