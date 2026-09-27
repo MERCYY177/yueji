@@ -66,15 +66,12 @@
   };
 
   window.Yueji = Object.assign(existing, {
-    version: '20260927-finished-cover',
+    version: '20260927-stats-calendar',
     errors,
     boot,
     wereadGateway: WEREAD_GATEWAY,
   });
 
-  // Migrate old releases that allowed a WeRead Skill Key to persist in localStorage.
-  // The unified release keeps it only for the current browser session and removes
-  // both legacy localStorage entries before the extension boot code can read them.
   try {
     const legacyKey = localStorage.getItem('yueji-weread-key');
     if (legacyKey && !sessionStorage.getItem('yueji-weread-key'))
@@ -104,6 +101,7 @@
   });
   import('./yueji-sync-gate.js?v=20260927-unified')
     .then(() => import('./yueji-unified.js?v=20260927-unified'))
+    .then(() => import('./yueji-stats-calendar.js?v=20260927-stats-calendar'))
     .catch((error) => {
       errors.capture(error, { area: 'ui', stage: 'unified-layout', recoverable: true });
     });
@@ -127,8 +125,6 @@
     document.body.append(script);
   }
 
-  // These bridges must run as classic scripts after app.js/yueji-extension.js so
-  // they can share the existing global archive state without duplicating it.
   document.addEventListener(
     'DOMContentLoaded',
     () => {
