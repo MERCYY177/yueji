@@ -45,6 +45,17 @@
 
   window.Yueji = Object.assign(existing, { version: '20260927-unified', errors, boot });
 
+  // Migrate old releases that allowed a WeRead Skill Key to persist in localStorage.
+  // The unified release keeps it only for the current browser session and removes
+  // both legacy localStorage entries before the extension boot code can read them.
+  try {
+    const legacyKey = localStorage.getItem('yueji-weread-key');
+    if (legacyKey && !sessionStorage.getItem('yueji-weread-key'))
+      sessionStorage.setItem('yueji-weread-key', legacyKey);
+    localStorage.removeItem('yueji-weread-key');
+    localStorage.removeItem('yueji-weread-key-persist-v1');
+  } catch {}
+
   if (!document.querySelector('link[data-yueji-theme]')) {
     const theme = document.createElement('link');
     theme.rel = 'stylesheet';
