@@ -34,12 +34,29 @@ export function createReadingSnapshot({
   const overallSummary = normalizePeriodSummary(overall, 'overall');
   const currentMonthSummary = normalizePeriodSummary(currentMonth, 'monthly', { year, month });
   let dailyByDate = normalizeDailyReadTimes(annual, { timeZoneOffsetMinutes });
-  if (!Object.keys(dailyByDate).length) {
-    for (const value of Object.values(monthly || {})) {
+  let dailySource = 'missing';
+  let completeMonths = [];
+  if (Object.keys(dailyByDate).length) {
+    dailySource = 'annual-daily';
+    const through = Math.max(0, Math.min(12, Number(month) || 12));
+    completeMonths = Array.from(
+      { length: through },
+      (_, index) => `${year}-${String(index + 1).padStart(2, '0')}`,
+    );
+  } else {
+    const completed = [];
+    for (const [monthKey, value] of Object.entries(monthly || {})) {
       dailyByDate = mergeDailyBuckets(
         dailyByDate,
         monthlyReadTimesToDaily(value, { timeZoneOffsetMinutes }),
       );
+      const numericMonth = Number(monthKey);
+      if (year && numericMonth >= 1 && numericMonth <= 12)
+        completed.push(`${year}-${String(numericMonth).padStart(2, '0')}`);
+    }
+    if (completed.length) {
+      dailySource = 'monthly-fallback';
+      completeMonths = [...new Set(completed)].sort();
     }
   }
   return {
@@ -48,5 +65,7 @@ export function createReadingSnapshot({
     currentMonthSummary,
     dailyByDate,
     monthlyBuckets: monthly,
+    dailySource,
+    completeMonths,
   };
 }
