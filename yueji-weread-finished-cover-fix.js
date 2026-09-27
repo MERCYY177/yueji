@@ -8,6 +8,7 @@
     'wereadRestartBtn',
   ]);
   const SESSION_KEY = 'yueji-weread-key';
+  const STORAGE_KEY = 'yueji-archive-v1';
 
   function finishFlag(value) {
     if (value === true || value === 1) return true;
@@ -38,10 +39,22 @@
 
   function archiveState() {
     try {
-      return typeof state !== 'undefined' ? state : null;
+      const raw = localStorage.getItem(STORAGE_KEY);
+      const archive = raw ? JSON.parse(raw) : null;
+      return archive && typeof archive === 'object' ? archive : null;
     } catch {
       return null;
     }
+  }
+
+  async function persistArchive(archive) {
+    if (!archive || typeof archive !== 'object') return;
+    if (typeof replaceArchiveData === 'function') {
+      await replaceArchiveData(archive, false);
+      if (typeof renderAll === 'function') renderAll();
+      return;
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(archive));
   }
 
   function findBookByKey(key) {
@@ -142,11 +155,16 @@
 
     if (changed) {
       try {
-        if (typeof save === 'function') save();
-      } catch {}
-      try {
-        if (typeof renderAll === 'function') renderAll();
-      } catch {}
+        await persistArchive(archive);
+      } catch (error) {
+        window.Yueji?.errors?.capture?.(error, {
+          area: 'weread',
+          stage: 'finished-archive-persist',
+          recoverable: true,
+          quiet: true,
+        });
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(archive));
+      }
     }
     return changed;
   }
