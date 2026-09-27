@@ -2,10 +2,11 @@ import { EXPORT_MODULES, normalizeFontMode, validateCustomFontFile } from './yue
 
 const SETTINGS_KEY = 'yueji-appearance-settings-v1';
 const PROFILE_KEY = 'yueji-profile-v1';
-const DB_NAME = 'yueji-appearance-v1';
-const STORE = 'assets';
-const SYSTEM_FONT = 'system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif';
-let customFontUrl = '';
+const FONT_DB = 'yueji-appearance-v1';
+const FONT_STORE = 'fonts';
+const FONT_ID = 'custom-page-font';
+const SYSTEM_FONT =
+  'system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif';
 
 function readJson(key, fallback) {
   try {
@@ -23,24 +24,22 @@ function settings() {
 function profile() {
   return readJson(PROFILE_KEY, { nickname: '', signature: '' });
 }
-
-function openDb() {
+function openFontDb() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
+    const req = indexedDB.open(FONT_DB, 1);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains(FONT_STORE)) req.result.createObjectStore(FONT_STORE);
     };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
   });
 }
 async function putCustomFont(file) {
-  const db = await openDb();
+  const db = await openFontDb();
   try {
     await new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).put(file, 'customFont');
+      const tx = db.transaction(FONT_STORE, 'readwrite');
+      tx.objectStore(FONT_STORE).put(file, FONT_ID);
       tx.oncomplete = resolve;
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error);
@@ -50,48 +49,52 @@ async function putCustomFont(file) {
   }
 }
 async function getCustomFont() {
-  const db = await openDb();
+  const db = await openFontDb();
   try {
     return await new Promise((resolve, reject) => {
-      const request = db.transaction(STORE, 'readonly').objectStore(STORE).get('customFont');
-      request.onsuccess = () => resolve(request.result || null);
-      request.onerror = () => reject(request.error);
+      const req = db.transaction(FONT_STORE).objectStore(FONT_STORE).get(FONT_ID);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
     });
   } finally {
     db.close();
   }
 }
-function ensureFontStyle() {
-  let style = document.getElementById('yuejiAppearanceStyle');
-  if (style) return style;
-  style = document.createElement('style');
+function ensureAppearanceStyle() {
+  if (document.getElementById('yuejiAppearanceStyle')) return;
+  const style = document.createElement('style');
   style.id = 'yuejiAppearanceStyle';
-  style.textContent = `@font-face{font-family:YuejiHuiwen;src:url('./assets/fonts/huiwen-mincho.woff') format('woff');font-display:swap}body{font-family:var(--yueji-page-font,${SYSTEM_FONT})}.sheet,.card,button,input,select,textarea{font-family:inherit}`;
-  document.head.append(style);
-  return style;
+  style.textContent = `
+    @font-face{font-family:YuejiHuiwen;src:url('./assets/fonts/huiwen-mincho.woff') format('woff');font-display:swap}
+    :root{--yueji-page-font:${SYSTEM_FONT}}
+    body,button,input,select,textarea{font-family:var(--yueji-page-font)}
+  `;
+  document.head.appendChild(style);
 }
+let customFontUrl = '';
 async function applyPageFont(mode = settings().pageFont) {
+  ensureAppearanceStyle();
   mode = normalizeFontMode(mode);
-  ensureFontStyle();
   if (customFontUrl) {
     URL.revokeObjectURL(customFontUrl);
     customFontUrl = '';
   }
   let family = SYSTEM_FONT;
-  if (mode === 'huiwen') {
-    family = 'YuejiHuiwen,serif';
+  if (mode === 'huiwen') family = 'YuejiHuiwen,serif';
+  if (mode === 'custom') {
     try {
-      await document.fonts.load('16px YuejiHuiwen');
-    } catch {}
-  } else if (mode === 'custom') {
-    const file = await getCustomFont();
-    if (file) {
-      customFontUrl = URL.createObjectURL(file);
-      const face = new FontFace('YuejiCustom', `url(${customFontUrl})`);
-      await face.load();
-      document.fonts.add(face);
-      family = 'YuejiCustom,sans-serif';
-    } else mode = 'system';
+      const blob = await getCustomFont();
+      if (!blob) mode = 'system';
+      else {
+        customFontUrl = URL.createObjectURL(blob);
+        const face = new FontFace('YuejiCustom', `url(${customFontUrl})`);
+        await face.load();
+        document.fonts.add(face);
+        family = 'YuejiCustom,' + SYSTEM_FONT;
+      }
+    } catch {
+      mode = 'system';
+    }
   }
   document.documentElement.style.setProperty('--yueji-page-font', family);
   const next = settings();
@@ -99,155 +102,135 @@ async function applyPageFont(mode = settings().pageFont) {
   writeJson(SETTINGS_KEY, next);
   return mode;
 }
-
-function fileToDataUrl(file) {
+function dataUrl(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result || ''));
     reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(blob);
   });
 }
-async function exportFontCss(mode) {
-  mode = normalizeFontMode(mode);
-  if (mode === 'huiwen') {
-    const response = await fetch('./assets/fonts/huiwen-mincho.woff');
-    if (!response.ok) throw new Error('汇文明朝体加载失败');
-    const url = await fileToDataUrl(await response.blob());
-    return {
-      family: 'YuejiExportFont',
-      css: `@font-face{font-family:YuejiExportFont;src:url('${url}') format('woff')}`,
-    };
-  }
-  if (mode === 'custom') {
-    const file = await getCustomFont();
-    if (!file) throw new Error('还没有上传自定义字体');
-    const url = await fileToDataUrl(file);
-    return {
-      family: 'YuejiExportFont',
-      css: `@font-face{font-family:YuejiExportFont;src:url('${url}')}`,
-    };
-  }
-  return { family: SYSTEM_FONT, css: '' };
-}
-function collectCss() {
-  const chunks = [];
-  for (const sheet of [...document.styleSheets]) {
-    try {
-      for (const rule of [...sheet.cssRules]) chunks.push(rule.cssText);
-    } catch {}
-  }
-  return chunks.join('\n');
-}
 async function inlineImages(root) {
-  for (const image of [...root.querySelectorAll('img')]) {
-    const src = image.currentSrc || image.src;
-    if (!src || src.startsWith('data:') || src.startsWith('blob:')) continue;
+  for (const img of root.querySelectorAll('img')) {
+    if (!img.src || img.src.startsWith('data:')) continue;
     try {
-      const response = await fetch(src, { mode: 'cors', credentials: 'omit' });
-      if (!response.ok) throw new Error('image');
-      image.src = await fileToDataUrl(await response.blob());
+      const res = await fetch(img.src, { mode: 'cors', credentials: 'omit' });
+      if (!res.ok) throw new Error('image');
+      img.src = await dataUrl(await res.blob());
     } catch {
-      image.removeAttribute('src');
-      image.style.display = 'none';
+      img.removeAttribute('src');
+      img.style.visibility = 'hidden';
     }
   }
 }
-function sourceForExport(key) {
-  if (key === 'year-overview' || key === 'year-calendar')
-    return document.getElementById('unifiedYearCard');
-  if (key === 'bookshelf') return document.querySelector('.page[data-page="library"]');
-  if (key === 'book-notes') return document.querySelector('.page[data-page="notes"]');
-  if (key === 'stats') return document.querySelector('.page[data-page="analytics"]');
-  if (key === 'month-stats') return document.getElementById('statsPanel-month');
-  return null;
-}
-function prepareClone(source, key) {
-  const clone = source.cloneNode(true);
-  clone.removeAttribute('hidden');
-  clone.classList.add('active');
-  clone.querySelectorAll('[hidden]').forEach((el) => el.removeAttribute('hidden'));
-  clone
-    .querySelectorAll('button,input,select,.bottom-nav,.year-wall-actions')
-    .forEach((el) => el.remove());
-  if (key === 'year-calendar') clone.querySelector('.unified-summary-grid')?.remove();
-  if (key === 'book-notes') {
-    const selected = document.getElementById('noteBookFilter')?.value || '';
-    clone.querySelectorAll('.chapter-book').forEach((details) => {
-      if (selected && details.dataset.bookKey !== selected) details.remove();
-      else details.open = true;
-    });
-    clone.querySelectorAll('.chapter-group').forEach((details) => (details.open = true));
+async function fontCssForExport(mode) {
+  mode = normalizeFontMode(mode);
+  if (mode === 'huiwen') {
+    try {
+      const res = await fetch('./assets/fonts/huiwen-mincho.woff');
+      if (res.ok) {
+        const src = await dataUrl(await res.blob());
+        return {
+          family: 'YuejiExportFont,serif',
+          css: `@font-face{font-family:YuejiExportFont;src:url('${src}') format('woff')}`,
+        };
+      }
+    } catch {}
   }
+  if (mode === 'custom') {
+    const blob = await getCustomFont();
+    if (blob) {
+      const src = await dataUrl(blob);
+      return {
+        family: 'YuejiExportFont,' + SYSTEM_FONT,
+        css: `@font-face{font-family:YuejiExportFont;src:url('${src}')}`,
+      };
+    }
+  }
+  return { family: SYSTEM_FONT, css: '' };
+}
+function sourceForExport(key) {
+  const map = {
+    'year-overview': '#unifiedYearCard',
+    'year-calendar': '#unifiedYearGrid',
+    bookshelf: '.page[data-page="library"]',
+    'book-notes': '#notesList',
+    statistics: '.page[data-page="analytics"]',
+    'month-stats': '#statsPanel-month',
+  };
+  return document.querySelector(map[key]);
+}
+function exportTitle(key) {
+  return EXPORT_MODULES.find((x) => x.key === key)?.label || '阅迹';
+}
+function exportMetaHtml(showNickname, showDate) {
+  const p = profile();
+  const bits = [];
+  if (showNickname && p.nickname) bits.push(`<b>${escapeHtml(p.nickname)}</b>`);
+  if (showNickname && p.signature) bits.push(`<span>${escapeHtml(p.signature)}</span>`);
+  if (showDate) bits.push(`<span>${new Date().toLocaleDateString('zh-CN')}</span>`);
+  return bits.length ? `<div class="yueji-export-meta">${bits.join(' · ')}</div>` : '';
+}
+function escapeHtml(value = '') {
+  return String(value).replace(/[&<>"']/g, (m) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[m],
+  );
+}
+function clonedExportTarget(source, key) {
+  if (!source) throw new Error('当前没有可导出的内容');
+  const clone = source.cloneNode(true);
+  clone.querySelectorAll('button,.round-btn,.soft-btn,.primary-btn,input,select').forEach((x) => x.remove());
+  if (key === 'book-notes') clone.querySelectorAll('details').forEach((details) => (details.open = true));
   return clone;
 }
-async function exportElementPng(source, key, options = {}) {
-  if (!source) throw new Error('这个模块当前没有可导出的内容');
-  await document.fonts.ready;
-  const clone = prepareClone(source, key);
-  const stage = document.createElement('div');
-  stage.style.cssText =
-    'position:fixed;left:-100000px;top:0;width:900px;background:var(--paper);padding:32px;z-index:-1;';
-  const p = profile();
-  if (options.showNickname || options.showDate) {
-    const header = document.createElement('header');
-    header.style.cssText =
-      'margin-bottom:20px;display:flex;justify-content:space-between;gap:20px;align-items:end';
-    header.innerHTML = `<div>${
-      options.showNickname && p.nickname
-        ? `<b style="font-size:24px">${String(p.nickname).replace(/[&<>]/g, '')}</b>`
-        : ''
-    }${
-      options.showNickname && p.signature
-        ? `<div style="margin-top:5px;opacity:.65">${String(p.signature).replace(/[&<>]/g, '')}</div>`
-        : ''
-    }</div>${options.showDate ? `<time>${new Date().toLocaleDateString('zh-CN')}</time>` : ''}`;
-    stage.append(header);
-  }
-  stage.append(clone);
-  document.body.append(stage);
+async function exportElementPng(source, key, options) {
+  const clone = clonedExportTarget(source, key);
   await inlineImages(clone);
-  const { family, css: fontCss } = await exportFontCss(
-    options.fontMode || settings().pageFont,
-  );
-  const width = Math.ceil(Math.max(720, stage.scrollWidth));
-  const height = Math.ceil(Math.min(30000, Math.max(200, stage.scrollHeight)));
-  const css = `${collectCss()}\n${fontCss}\n.export-root,.export-root *{font-family:${family}!important}.export-root{box-sizing:border-box;background:var(--paper);color:var(--ink)}`;
-  stage.classList.add('export-root');
-  stage.style.position = 'static';
-  stage.style.left = 'auto';
-  stage.style.top = 'auto';
-  stage.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
-  const html = new XMLSerializer().serializeToString(stage);
-  const escapedCss = css
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;');
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><foreignObject width="100%" height="100%"><style>${escapedCss}</style>${html}</foreignObject></svg>`;
-  const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-  const image = new Image();
-  await new Promise((resolve, reject) => {
-    image.onload = resolve;
-    image.onerror = reject;
-    image.src = dataUrl;
-  });
+  const font = await fontCssForExport(options.fontMode);
+  const width = Math.max(720, Math.ceil(source.getBoundingClientRect().width || source.scrollWidth || 900));
+  const estimatedHeight = Math.max(900, Math.ceil(source.scrollHeight || source.getBoundingClientRect().height || 900));
+  if (estimatedHeight > 24000) throw new Error('内容过长，请缩小导出范围后重试');
+  const height = Math.min(24000, estimatedHeight + 180);
+  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#5f8f7b';
+  const paper = getComputedStyle(document.documentElement).getPropertyValue('--paper').trim() || '#f5f6f8';
+  const ink = getComputedStyle(document.documentElement).getPropertyValue('--ink').trim() || '#202124';
+  const styleText = [...document.styleSheets]
+    .flatMap((sheet) => {
+      try {
+        return [...sheet.cssRules].map((rule) => rule.cssText);
+      } catch {
+        return [];
+      }
+    })
+    .join('\n');
+  const body = `<div class="yueji-export-root"><h1>${escapeHtml(exportTitle(key))}</h1>${exportMetaHtml(options.showNickname, options.showDate)}${clone.outerHTML}</div>`;
+  const css = `${font.css}${styleText}
+    html,body{margin:0;background:${paper};color:${ink};font-family:${font.family}}
+    .yueji-export-root{box-sizing:border-box;width:${width}px;padding:56px;background:${paper};min-height:${height}px}
+    .yueji-export-root>h1{margin:0 0 10px;font-size:34px}.yueji-export-meta{margin-bottom:28px;color:#73777d;font-size:14px}
+    .yueji-export-root .sheet,.yueji-export-root .overlay,.yueji-export-root .bottom-nav{display:none!important}`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml"><style>${css.replace(/<\/style/gi, '<\\/style')}</style>${body}</div></foreignObject></svg>`;
+  const encoded = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  const img = new Image();
+  img.decoding = 'async';
+  img.src = encoded;
+  await img.decode();
+  const scale = Math.min(2, 12000 / Math.max(width, height));
   const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
+  canvas.width = Math.max(1, Math.round(width * scale));
+  canvas.height = Math.max(1, Math.round(height * scale));
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(image, 0, 0);
-  const blob = await new Promise((resolve, reject) =>
-    canvas.toBlob(
-      (value) => (value ? resolve(value) : reject(new Error('PNG 生成失败'))),
-      'image/png',
-    ),
-  );
-  stage.remove();
-  const url = URL.createObjectURL(blob);
+  ctx.scale(scale, scale);
+  ctx.drawImage(img, 0, 0, width, height);
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+  if (!blob) throw new Error('浏览器没有生成 PNG');
   const a = document.createElement('a');
+  const url = URL.createObjectURL(blob);
   a.href = url;
   a.download = `yueji-${key}-${new Date().toISOString().slice(0, 10)}.png`;
+  document.body.appendChild(a);
   a.click();
+  a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
@@ -311,7 +294,8 @@ function installProfileAndFontSettings() {
 }
 function installExportSettings() {
   const section = document.getElementById('unifiedExportSettings');
-  if (!section) return;
+  if (!section) return false;
+  if (document.getElementById('yuejiExportModule')) return true;
   section.innerHTML = `<h4>导出图片</h4><div class="section-sub">所有图片导出都集中在这里；内容页不再显示导出按钮。</div><label class="field"><span>导出内容</span><select id="yuejiExportModule">${EXPORT_MODULES.map((x) => `<option value="${x.key}">${x.label}</option>`).join('')}</select></label><label class="field"><span>导出字体</span><select id="yuejiExportFont"><option value="system">系统字体</option><option value="huiwen">汇文明朝体</option><option value="custom">自定义字体</option></select></label><label class="check-line"><input id="yuejiExportNickname" type="checkbox" checked><span>显示昵称 / 个性签名</span></label><label class="check-line"><input id="yuejiExportDate" type="checkbox" checked><span>显示导出日期</span></label><button class="primary-btn" id="yuejiExportPng">生成 PNG</button><div class="section-sub" id="yuejiExportStatus"></div>`;
   section.querySelector('#yuejiExportFont').value = normalizeFontMode(settings().pageFont);
   section.querySelector('#yuejiExportPng').onclick = async () => {
@@ -333,11 +317,20 @@ function installExportSettings() {
       button.disabled = false;
     }
   };
+  return true;
+}
+function installExportSettingsWhenReady() {
+  if (installExportSettings()) return;
+  const observer = new MutationObserver(() => {
+    if (installExportSettings()) observer.disconnect();
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  setTimeout(() => observer.disconnect(), 15000);
 }
 async function install() {
   await applyPageFont();
   installProfileAndFontSettings();
-  installExportSettings();
+  installExportSettingsWhenReady();
   installChapterCollapse();
 }
 if (document.readyState === 'complete') setTimeout(install, 140);
