@@ -78,7 +78,7 @@ test('portable restore strips metadata before the original archive importer and 
     },
   };
   assert.equal(await context.replaceArchiveData(input, false), true);
-  assert.deepEqual(getRestoredPayload(), { books: [{ key: 'b' }] });
+  assert.equal(JSON.stringify(getRestoredPayload()), JSON.stringify({ books: [{ key: 'b' }] }));
   const saved = localStorage.dump();
   assert.equal(JSON.parse(saved['yueji-appearance-settings-v1']).pageFont, 'system');
   assert.equal(JSON.parse(saved['yueji-profile-v1']).nickname, 'D');
