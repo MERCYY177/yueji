@@ -54,6 +54,42 @@ function fakeGatewayPayload(apiName, body = {}) {
   return { data: {} };
 }
 
+async function verifyCalendarPlacement(page) {
+  assert.equal(
+    await page.locator('.page[data-page="today"] #unifiedYearCard').count(),
+    0,
+    'home page must not contain the annual calendar card',
+  );
+  await page.click('.bottom-nav [data-go="analytics"]');
+  await page.click('#statsTabs [data-stats-tab="month"]');
+  await page.waitForFunction(() => {
+    const month = document.getElementById('statsCalendarCard');
+    const year = document.getElementById('unifiedYearCard');
+    return month && !month.hidden && year?.hidden;
+  });
+  assert.equal(await page.locator('#statsCalendarCard .stats-calendar-month').count(), 1);
+
+  await page.click('#statsTabs [data-stats-tab="year"]');
+  await page.waitForFunction(() => {
+    const month = document.getElementById('statsCalendarCard');
+    const year = document.getElementById('unifiedYearCard');
+    return month?.hidden && year && !year.hidden;
+  });
+  assert.equal(
+    await page.locator('#unifiedYearGrid .unified-month').count(),
+    12,
+    'year statistics must show all 12 months',
+  );
+
+  await page.click('#statsTabs [data-stats-tab="overview"]');
+  await page.waitForFunction(() => {
+    const month = document.getElementById('statsCalendarCard');
+    const year = document.getElementById('unifiedYearCard');
+    return month?.hidden && year?.hidden;
+  });
+  await page.click('.bottom-nav [data-go="today"]');
+}
+
 try {
   const context = await browser.newContext({ acceptDownloads: true });
   const page = await context.newPage();
@@ -80,6 +116,7 @@ try {
 
   await page.goto('http://127.0.0.1:4173/', { waitUntil: 'load' });
   await page.waitForSelector('#unifiedYearCard', { timeout: 15000 });
+  await page.waitForSelector('#statsCalendarCard', { timeout: 15000 });
   await page.waitForTimeout(600);
   const initialDiagnostics = await runtimeDiagnostics(page, 'initial');
   assert.equal(initialDiagnostics.wereadGateway, GATEWAY);
@@ -95,6 +132,7 @@ try {
 
   const statLabels = await page.locator('#statsTabs [data-stats-tab]').allTextContents();
   assert.deepEqual(statLabels.map((x) => x.trim()), ['本月', '今年', '全部']);
+  await verifyCalendarPlacement(page);
 
   const exportLabels = await page.locator('#yuejiExportModule option').allTextContents();
   assert.deepEqual(exportLabels.map((x) => x.trim()), [
@@ -150,6 +188,7 @@ try {
   });
   await page.reload({ waitUntil: 'load' });
   await page.waitForSelector('#unifiedYearCard', { timeout: 15000 });
+  await page.waitForSelector('#statsCalendarCard', { timeout: 15000 });
   await page.waitForFunction(() => window.Yueji?.wereadGateway?.includes('workers.dev'));
   const keyState = await page.evaluate(() => ({
     local: localStorage.getItem('yueji-weread-key'),
@@ -159,8 +198,8 @@ try {
   assert.equal(keyState.local, null);
   assert.equal(keyState.persist, null);
   assert.equal(keyState.session, 'browser-smoke-secret');
+  await verifyCalendarPlacement(page);
 
-  await page.waitForFunction(() => window.Yueji?.wereadGateway?.includes('workers.dev'));
   assert.ok(
     gatewayRequests.every((item) => item.url === GATEWAY),
     'all WeRead browser requests must use the Cloudflare Worker endpoint',
@@ -171,6 +210,9 @@ try {
   await page.waitForSelector('#wereadRememberKey', { state: 'attached', timeout: 15000 });
   assert.equal(await page.locator('#wereadRememberKey').isChecked(), false);
   assert.equal(await page.locator('#wereadRememberKey').locator('xpath=..').isVisible(), false);
+  assert.equal(await page.locator('#yuejiNickname').count(), 0);
+  assert.equal(await page.locator('#yuejiSignature').count(), 0);
+  assert.equal(await page.locator('#yuejiExportCredit').isVisible(), true);
 
   await page.waitForFunction(() => document.querySelectorAll('#noteBookFilter option').length > 1);
   await page.selectOption('#yuejiExportModule', 'book-notes');
@@ -182,6 +224,7 @@ try {
   assert.equal(await page.locator('#yuejiExportBook').inputValue(), 'browser-smoke-book');
 
   await page.selectOption('#yuejiExportModule', 'year-overview');
+  await page.fill('#yuejiExportCredit', '小树');
   const [download] = await Promise.all([
     page.waitForEvent('download', { timeout: 20000 }),
     page.click('#yuejiExportPng'),
@@ -193,7 +236,7 @@ try {
   assert.match(download.suggestedFilename(), /^yueji-year-overview-\d{4}-\d{2}-\d{2}\.png$/);
 
   assert.deepEqual(pageErrors, [], `browser page errors:\n${pageErrors.join('\n')}`);
-  console.log('Browser smoke OK: GitHub Pages UI, Cloudflare gateway routing, four tabs, PNG export');
+  console.log('Browser smoke OK: calendar lives in stats, compact settings, Cloudflare routing, PNG export');
 } finally {
   await browser.close();
 }
