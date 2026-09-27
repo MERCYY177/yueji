@@ -37,6 +37,17 @@
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
   }
 
+  function normalizeText(value) {
+    return String(value || '')
+      .normalize('NFKC')
+      .toLowerCase()
+      .replace(/[\s·•:：,，.。!！?？'"“”‘’\-—_()（）[\]【】《》〈〉<>]/g, '');
+  }
+
+  function normalizeAuthor(value) {
+    return normalizeText(value).replace(/著|编著|主编|编|译者|翻译|译|作者/g, '');
+  }
+
   async function waitForWeReadRuntimeReady(timeoutMs = 15000) {
     if (typeof localStorage === 'undefined') return true;
     const started = Date.now();
@@ -48,8 +59,6 @@
   }
 
   function archiveState() {
-    // Once the extension runtime has hydrated IndexedDB, the live classic-script
-    // state is authoritative for WeRead-only books and shelf metadata.
     try {
       if (typeof state !== 'undefined' && state && typeof state === 'object') return state;
     } catch {}
@@ -65,17 +74,11 @@
 
   async function persistArchive(archive) {
     if (!archive || typeof archive !== 'object') return;
-    if (typeof replaceArchiveData === 'function') {
-      await replaceArchiveData(archive, false);
-      if (typeof renderAll === 'function') renderAll();
-      return;
-    }
     if (typeof window.yuejiPersistExternalState === 'function') {
       await window.yuejiPersistExternalState(archive);
     }
     if (typeof save === 'function') {
       save();
-      if (typeof renderAll === 'function') renderAll();
       return;
     }
     try {
@@ -87,6 +90,47 @@
   function findBookByKey(key) {
     const archive = archiveState();
     return (archive?.books || []).find((item) => String(item?.key || '') === String(key || '')) || null;
+  }
+
+  function coverForBookKey(key) {
+    const archive = archiveState();
+    if (!archive) return '';
+    const target = findBookByKey(key);
+    if (!target) return '';
+    const direct = String(
+      target?.manualCover ||
+        target?.cover ||
+        target?.weReadCover ||
+        target?.sourceArchives?.weread?.cover ||
+        target?.sourceArchives?.weread?.weReadCover ||
+        '',
+    ).trim();
+    if (direct) return direct;
+
+    const id = String(target?.weReadBookId || target?.sourceArchives?.weread?.weReadBookId || '');
+    if (id) {
+      const sibling = (archive.books || []).find(
+        (item) => String(item?.weReadBookId || '') === id && (item?.cover || item?.weReadCover),
+      );
+      const siblingCover = String(sibling?.cover || sibling?.weReadCover || '').trim();
+      if (siblingCover) return siblingCover;
+      const shelf = (archive.weRead?.shelfBooks || []).find(
+        (item) => String(item?.bookId || '') === id,
+      );
+      const shelfCover = String(shelf?.cover || '').trim();
+      if (shelfCover) return shelfCover;
+    }
+
+    const title = normalizeText(target?.title),
+      author = normalizeAuthor(target?.author);
+    if (!title) return '';
+    const sibling = (archive.books || []).find((item) => {
+      if (item === target) return false;
+      if (normalizeText(item?.title) !== title) return false;
+      const otherAuthor = normalizeAuthor(item?.author);
+      return (!author || !otherAuthor || author === otherAuthor) && (item?.cover || item?.weReadCover);
+    });
+    return String(sibling?.cover || sibling?.weReadCover || '').trim();
   }
 
   async function fetchProgress(bookId) {
@@ -111,13 +155,37 @@
     return data?.book && typeof data.book === 'object' ? data.book : data;
   }
 
+  function refreshDerivedPanels() {
+    try {
+      if (typeof renderMonthly === 'function' && document.getElementById('monthFinished')) renderMonthly();
+    } catch (error) {
+      window.Yueji?.errors?.capture?.(error, {
+        area: 'ui',
+        stage: 'refresh-monthly-after-weread-reconcile',
+        recoverable: true,
+        quiet: true,
+      });
+    }
+    try {
+      if (typeof renderYearWall === 'function' && document.getElementById('yearWallPreview'))
+        (window.renderYearWall || renderYearWall)();
+    } catch (error) {
+      window.Yueji?.errors?.capture?.(error, {
+        area: 'ui',
+        stage: 'refresh-year-wall-after-weread-reconcile',
+        recoverable: true,
+        quiet: true,
+      });
+    }
+  }
+
   async function reconcileWeReadFinishedBooks({ fetchMissingDates = true } = {}) {
-    // In real browsers, wait until yueji-extension has finished restoring its
-    // IndexedDB snapshot before touching WeRead-only books. Unit/legacy classic
-    // script environments without localStorage stay synchronous here.
     if (typeof localStorage !== 'undefined') await waitForWeReadRuntimeReady();
     const archive = archiveState();
-    if (!archive?.books?.length) return false;
+    if (!archive?.books?.length) {
+      refreshDerivedPanels();
+      return false;
+    }
     const shelf = Array.isArray(archive.weRead?.shelfBooks) ? archive.weRead.shelfBooks : [];
     const shelfById = new Map(
       shelf
@@ -137,12 +205,18 @@
         target.finishReading = raw.finishReading;
         changed = true;
       }
-      if (raw?.cover && !target.weReadCover) {
-        target.weReadCover = raw.cover;
+      const sourceCover = String(raw?.cover || '').trim();
+      if (sourceCover && !target.weReadCover) {
+        target.weReadCover = sourceCover;
         changed = true;
       }
-      if (raw?.cover && !target.cover) {
-        target.cover = raw.cover;
+      if (sourceCover && !target.cover) {
+        target.cover = sourceCover;
+        changed = true;
+      }
+      const directFinishedDate = safeDate(raw?.finishTime || target?.finishTime);
+      if (!target.finishedDate && directFinishedDate) {
+        target.finishedDate = directFinishedDate;
         changed = true;
       }
       if (!manualProgress && Number(target.progress || 0) < 99.95) {
@@ -162,6 +236,10 @@
             if (finishedDate) {
               target.finishedDate = finishedDate;
               target.finishTime = detail.finishTime;
+              changed = true;
+            }
+            if (detail.finishReading !== undefined && target.finishReading !== detail.finishReading) {
+              target.finishReading = detail.finishReading;
               changed = true;
             }
             if (!manualProgress && Number(target.progress || 0) < 99.95) {
@@ -194,42 +272,66 @@
           recoverable: true,
           quiet: true,
         });
-        try {
-          if (typeof localStorage !== 'undefined' && typeof localStorage.setItem === 'function')
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(archive));
-        } catch {}
       }
     }
+    refreshDerivedPanels();
+    applyCoverFallbacks();
     return changed;
   }
 
   function addCoverFallback(img) {
     if (!(img instanceof HTMLImageElement) || !img.dataset.coverKey) return;
-    const source = findBookByKey(img.dataset.coverKey);
-    const fallback = String(source?.cover || source?.weReadCover || '').trim();
+    const fallback = coverForBookKey(img.dataset.coverKey);
     if (!fallback) return;
     img.dataset.coverFallback = fallback;
+    img.referrerPolicy = 'no-referrer';
+    const parent = img.closest(
+      '.cover-art,.layout-cover-art,.home-recent-cover,.month-book-cover,.poster-cover,.note-book-cover,.day-cover',
+    );
+    if (img.dataset.coverFallbackBound !== '1') {
+      img.dataset.coverFallbackBound = '1';
+      img.addEventListener('load', () => parent?.classList.add('has-image'));
+      img.addEventListener('error', () => {
+        parent?.classList.remove('has-image');
+      });
+    }
     if (!img.getAttribute('src')) img.src = img.dataset.coverFallback;
-    if (img.dataset.coverFallbackBound === '1') return;
-    img.dataset.coverFallbackBound = '1';
-    img.addEventListener('error', () => {
-      if (img.dataset.coverFallbackApplied === '1' || !img.dataset.coverFallback) return;
-      img.dataset.coverFallbackApplied = '1';
-      img.src = img.dataset.coverFallback;
-    });
+  }
+
+  function applyCoverFallbacks(root = document) {
+    if (!root) return;
+    if (root instanceof HTMLImageElement) addCoverFallback(root);
+    root.querySelectorAll?.('img[data-cover-key]').forEach(addCoverFallback);
   }
 
   function applyYearCoverFallbacks(root = document.getElementById('yearWallPreview')) {
-    if (!root) return;
-    root.querySelectorAll('img[data-cover-key]').forEach(addCoverFallback);
+    applyCoverFallbacks(root);
   }
 
-  function observeYearWall() {
-    const root = document.getElementById('yearWallPreview');
-    if (!root) return;
-    applyYearCoverFallbacks(root);
-    const observer = new MutationObserver(() => applyYearCoverFallbacks(root));
-    observer.observe(root, { childList: true, subtree: true });
+  function patchHydrateCovers() {
+    const current = window.hydrateCovers;
+    if (typeof current !== 'function' || current.__yuejiDirectCoverFallback) return false;
+    const wrapped = async function (root = document) {
+      applyCoverFallbacks(root);
+      const result = await current(root);
+      applyCoverFallbacks(root);
+      return result;
+    };
+    wrapped.__yuejiDirectCoverFallback = true;
+    window.hydrateCovers = wrapped;
+    return true;
+  }
+
+  function observeCoverNodes() {
+    applyCoverFallbacks(document);
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes || []) {
+          if (node?.nodeType === 1) applyCoverFallbacks(node);
+        }
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
   }
 
   async function waitForPrimarySyncIdle(timeoutMs = 15 * 60 * 1000) {
@@ -251,7 +353,7 @@
         setTimeout(async () => {
           await waitForPrimarySyncIdle();
           await reconcileWeReadFinishedBooks({ fetchMissingDates: true });
-          applyYearCoverFallbacks();
+          applyCoverFallbacks();
         }, 0);
       },
       true,
@@ -262,12 +364,19 @@
     window.Yueji = window.Yueji || {};
     window.Yueji.isWeReadFinished = isWeReadFinished;
     window.Yueji.reconcileWeReadFinishedBooks = reconcileWeReadFinishedBooks;
+    window.Yueji.applyCoverFallbacks = applyCoverFallbacks;
     window.Yueji.applyYearCoverFallbacks = applyYearCoverFallbacks;
-    observeYearWall();
+    window.Yueji.coverForBookKey = coverForBookKey;
+    patchHydrateCovers();
+    observeCoverNodes();
     installSyncRecovery();
     void reconcileWeReadFinishedBooks({
       fetchMissingDates: Boolean(sessionStorage.getItem(SESSION_KEY)),
-    }).then(() => applyYearCoverFallbacks());
+    }).then(() => {
+      patchHydrateCovers();
+      refreshDerivedPanels();
+      applyCoverFallbacks();
+    });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
