@@ -21,6 +21,7 @@ const SHELL = [
   './yueji-reading-model.js',
   './yueji-weread-reading.js',
   './yueji-unified-ui-model.js',
+  './yueji-sync-gate.js',
   './yueji-unified.js',
   './yueji-appearance-model.js',
   './yueji-appearance.js',
