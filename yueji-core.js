@@ -43,7 +43,7 @@
     },
   };
 
-  window.Yueji = Object.assign(existing, { version: '20260919-r1', errors, boot });
+  window.Yueji = Object.assign(existing, { version: '20260927-unified', errors, boot });
 
   if (!document.querySelector('link[data-yueji-theme]')) {
     const theme = document.createElement('link');
@@ -63,6 +63,9 @@
     });
   import('./yueji-release-ui.js?v=20260918-r2').catch((error) => {
     errors.capture(error, { area: 'ui', stage: 'release-refresh', recoverable: true });
+  });
+  import('./yueji-unified.js?v=20260927-unified').catch((error) => {
+    errors.capture(error, { area: 'ui', stage: 'unified-layout', recoverable: true });
   });
 
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
