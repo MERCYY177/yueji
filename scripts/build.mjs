@@ -29,6 +29,7 @@ const entries = [
   'yueji-unified.js',
   'yueji-appearance-model.js',
   'yueji-appearance.js',
+  'yueji-export-book-picker.js',
   'yueji-backup-extension.js',
   'netlify.toml',
   'assets',
@@ -54,6 +55,7 @@ for (const asset of [
   'yueji-unified.js',
   'yueji-appearance-model.js',
   'yueji-appearance.js',
+  'yueji-export-book-picker.js',
   'yueji-backup-extension.js',
 ]) await stat(`${output}/${asset}`);
 await import('./verify-dist.mjs');
