@@ -1,4 +1,4 @@
-const CACHE = 'yueji-shell-20260927-stats-calendar';
+const CACHE = 'yueji-shell-20260927-finished-date';
 const SHELL = [
   './',
   './index.html',
@@ -15,6 +15,7 @@ const SHELL = [
   './yueji-p1-identity-migration.js',
   './yueji-weread-date-evidence.js',
   './yueji-weread-finished-cover-fix.js',
+  './yueji-weread-finished-date-fallback.js',
   './yueji-layout.js',
   './yueji-book-cover.js',
   './yueji-onboarding.js',

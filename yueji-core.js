@@ -140,6 +140,12 @@
         'weread',
         'finished-cover-repair',
       );
+      appendClassicBridge(
+        './yueji-weread-finished-date-fallback.js?v=20260927-finished-date',
+        'data-yueji-weread-finished-date-fallback',
+        'weread',
+        'finished-date-fallback',
+      );
     },
     { once: true },
   );

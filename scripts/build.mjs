@@ -19,6 +19,7 @@ const entries = [
   'yueji-p1-identity-migration.js',
   'yueji-weread-date-evidence.js',
   'yueji-weread-finished-cover-fix.js',
+  'yueji-weread-finished-date-fallback.js',
   'yueji-layout.js',
   'yueji-book-cover.js',
   'yueji-onboarding.js',
@@ -60,6 +61,7 @@ for (const asset of [
   'yueji-export-book-picker.js',
   'yueji-backup-extension.js',
   'yueji-weread-finished-cover-fix.js',
+  'yueji-weread-finished-date-fallback.js',
 ]) await stat(`${output}/${asset}`);
 await import('./verify-dist.mjs');
 console.log('Build OK: dist/');
