@@ -80,9 +80,11 @@
     .catch((error) => {
       errors.capture(error, { area: 'ui', stage: 'unified-layout', recoverable: true });
     });
-  import('./yueji-appearance.js?v=20260927-unified').catch((error) => {
-    errors.capture(error, { area: 'ui', stage: 'appearance-export', recoverable: true });
-  });
+  import('./yueji-appearance.js?v=20260927-unified')
+    .then(() => import('./yueji-export-book-picker.js?v=20260927-unified'))
+    .catch((error) => {
+      errors.capture(error, { area: 'ui', stage: 'appearance-export', recoverable: true });
+    });
 
   // This bridge must run as a classic script after app.js so it can wrap the
   // existing portable backup functions without duplicating their book/highlight/cover logic.
