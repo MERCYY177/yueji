@@ -1,4 +1,4 @@
-const CACHE = 'yueji-shell-20260927-finished-date';
+const CACHE = 'yueji-shell-20260927-finished-shelf';
 const SHELL = [
   './',
   './index.html',
