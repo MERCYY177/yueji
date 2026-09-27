@@ -8,6 +8,7 @@
     "test": "node --test tests/*.test.mjs",
     "build": "node scripts/build.mjs",
     "check": "npm run syntax && npm test && npm run build",
+    "cf:deploy": "npx --yes wrangler@4.140.0 deploy --config worker/wrangler.toml",
     "format:check": "prettier --check .",
     "format": "prettier --write ."
   },

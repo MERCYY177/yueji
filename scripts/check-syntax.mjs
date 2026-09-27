@@ -1,7 +1,7 @@
 import { readdir } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 
-const roots = ['.', 'netlify/functions', 'scripts'];
+const roots = ['.', 'netlify/functions', 'worker/src', 'scripts'];
 const files = [];
 for (const root of roots) {
   for (const entry of await readdir(root, { withFileTypes: true })) {

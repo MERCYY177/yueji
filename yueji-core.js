@@ -43,7 +43,34 @@
     },
   };
 
-  window.Yueji = Object.assign(existing, { version: '20260927-unified', errors, boot });
+  const WEREAD_GATEWAY =
+    'https://yueji-weread-gateway.xiaoshu10088.workers.dev/api/weread';
+  const nativeFetch = globalThis.fetch.bind(globalThis);
+  const isLegacyGatewayRequest = (input) => {
+    try {
+      const raw = input instanceof Request ? input.url : String(input || '');
+      const url = new URL(raw, location.href);
+      return url.pathname === '/.netlify/functions/weread-gateway';
+    } catch {
+      return false;
+    }
+  };
+  globalThis.fetch = (input, init) => {
+    if (!isLegacyGatewayRequest(input)) return nativeFetch(input, init);
+    if (input instanceof Request) {
+      const headers = new Headers(input.headers);
+      const request = new Request(WEREAD_GATEWAY, input);
+      return nativeFetch(new Request(request, { headers }), init);
+    }
+    return nativeFetch(WEREAD_GATEWAY, init);
+  };
+
+  window.Yueji = Object.assign(existing, {
+    version: '20260927-github-pages',
+    errors,
+    boot,
+    wereadGateway: WEREAD_GATEWAY,
+  });
 
   // Migrate old releases that allowed a WeRead Skill Key to persist in localStorage.
   // The unified release keeps it only for the current browser session and removes

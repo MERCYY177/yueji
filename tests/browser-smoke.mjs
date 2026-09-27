@@ -5,6 +5,7 @@ import { chromium } from 'playwright-core';
 const chrome = process.env.CHROME_BIN;
 if (!chrome) throw new Error('CHROME_BIN is required');
 
+const GATEWAY = 'https://yueji-weread-gateway.xiaoshu10088.workers.dev/api/weread';
 const browser = await chromium.launch({
   executablePath: chrome,
   headless: true,
@@ -26,15 +27,51 @@ async function runtimeDiagnostics(page, label) {
       (x) => x.id || x.querySelector('h4')?.textContent || '',
     ),
     yuejiVersion: window.Yueji?.version || '',
+    wereadGateway: window.Yueji?.wereadGateway || '',
     yuejiErrors: window.Yueji?.errors?.history || [],
   }));
   console.log(`[browser diagnostics:${label}] ${JSON.stringify(result)}`);
   return result;
 }
 
+function fakeGatewayPayload(apiName, body = {}) {
+  if (apiName === '/readdata/detail') {
+    return {
+      data: {
+        totalReadTime: body.mode === 'overall' ? 7200 : 3600,
+        readDays: body.mode === 'overall' ? 20 : 10,
+        dailyReadTimes: body.mode === 'annually' ? { '2026-09-27': 900 } : undefined,
+        readTimes: {},
+      },
+    };
+  }
+  if (apiName === '/shelf/sync') return { data: { books: [] } };
+  if (apiName === '/user/notebooks') return { data: { books: [], hasMore: false } };
+  if (apiName === '/book/bookmarklist') return { data: { updated: [], chapters: [], removed: [] } };
+  if (apiName === '/review/list/mine')
+    return { data: { reviews: [], hasMore: false, removed: [], synckey: '' } };
+  if (apiName === '/book/getprogress') return { data: { book: {}, bookId: body.bookId } };
+  return { data: {} };
+}
+
 try {
   const context = await browser.newContext({ acceptDownloads: true });
   const page = await context.newPage();
+  const gatewayRequests = [];
+  await page.route(GATEWAY, async (route) => {
+    const request = route.request();
+    const body = request.postDataJSON?.() || {};
+    gatewayRequests.push({ url: request.url(), body });
+    await route.fulfill({
+      status: 200,
+      headers: {
+        'content-type': 'application/json; charset=utf-8',
+        'access-control-allow-origin': 'http://127.0.0.1:4173',
+        'access-control-allow-headers': 'authorization, content-type',
+      },
+      body: JSON.stringify(fakeGatewayPayload(body.api_name, body)),
+    });
+  });
   page.on('console', (message) => {
     if (message.type() === 'error') console.error('[browser console]', message.text());
   });
@@ -45,6 +82,7 @@ try {
   await page.waitForSelector('#unifiedYearCard', { timeout: 15000 });
   await page.waitForTimeout(600);
   const initialDiagnostics = await runtimeDiagnostics(page, 'initial');
+  assert.equal(initialDiagnostics.wereadGateway, GATEWAY);
   if (!initialDiagnostics.exportModule)
     throw new Error(`Export module did not mount: ${JSON.stringify(initialDiagnostics)}`);
 
@@ -68,13 +106,9 @@ try {
     '当前月份统计',
   ]);
 
-  // Follow the real first-run flow rather than forcing clicks through the guide.
   const guideClose = page.locator('#yuejiGuide.show [data-guide-close]');
   if (await guideClose.isVisible()) await guideClose.click();
 
-  // Seed one deterministic local book while also emulating a legacy persisted
-  // Skill Key. The reload must keep the archive, migrate the Key to the current
-  // session, and clear both legacy localStorage entries.
   await page.evaluate(() => {
     localStorage.setItem('yueji-weread-key', 'browser-smoke-secret');
     localStorage.setItem('yueji-weread-key-persist-v1', '1');
@@ -116,6 +150,7 @@ try {
   });
   await page.reload({ waitUntil: 'load' });
   await page.waitForSelector('#unifiedYearCard', { timeout: 15000 });
+  await page.waitForFunction(() => window.Yueji?.wereadGateway?.includes('workers.dev'));
   const keyState = await page.evaluate(() => ({
     local: localStorage.getItem('yueji-weread-key'),
     persist: localStorage.getItem('yueji-weread-key-persist-v1'),
@@ -125,18 +160,18 @@ try {
   assert.equal(keyState.persist, null);
   assert.equal(keyState.session, 'browser-smoke-secret');
 
+  await page.waitForFunction(() => window.Yueji?.wereadGateway?.includes('workers.dev'));
+  assert.ok(
+    gatewayRequests.every((item) => item.url === GATEWAY),
+    'all WeRead browser requests must use the Cloudflare Worker endpoint',
+  );
+
   await page.click('#settingsBtn');
   await page.waitForSelector('#yuejiExportModule', { state: 'visible', timeout: 10000 });
-
-  // The old "remember Key" control remains only for compatibility in the
-  // extension markup; unified UI must force it hidden and unchecked even while
-  // the rest of the settings sheet is visible.
   await page.waitForSelector('#wereadRememberKey', { state: 'attached', timeout: 15000 });
   assert.equal(await page.locator('#wereadRememberKey').isChecked(), false);
   assert.equal(await page.locator('#wereadRememberKey').locator('xpath=..').isVisible(), false);
 
-  // The Settings-based single-book export must work independently of whatever
-  // was previously selected on the Notes page.
   await page.waitForFunction(() => document.querySelectorAll('#noteBookFilter option').length > 1);
   await page.selectOption('#yuejiExportModule', 'book-notes');
   await page.waitForFunction(() => {
@@ -146,8 +181,6 @@ try {
   });
   assert.equal(await page.locator('#yuejiExportBook').inputValue(), 'browser-smoke-book');
 
-  // Exercise the actual SVG -> Canvas -> PNG path in Chromium. This catches the
-  // tainted-canvas class of failures that static tests cannot see.
   await page.selectOption('#yuejiExportModule', 'year-overview');
   const [download] = await Promise.all([
     page.waitForEvent('download', { timeout: 20000 }),
@@ -160,7 +193,7 @@ try {
   assert.match(download.suggestedFilename(), /^yueji-year-overview-\d{4}-\d{2}-\d{2}\.png$/);
 
   assert.deepEqual(pageErrors, [], `browser page errors:\n${pageErrors.join('\n')}`);
-  console.log('Browser smoke OK: four tabs, stats tabs, Skill Key migration, book picker, PNG export');
+  console.log('Browser smoke OK: GitHub Pages UI, Cloudflare gateway routing, four tabs, PNG export');
 } finally {
   await browser.close();
 }

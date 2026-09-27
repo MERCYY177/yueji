@@ -31,7 +31,6 @@ const entries = [
   'yueji-appearance.js',
   'yueji-export-book-picker.js',
   'yueji-backup-extension.js',
-  'netlify.toml',
   'assets',
   'vendor',
 ];
