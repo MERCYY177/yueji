@@ -5,6 +5,36 @@ function bookOptions() {
     .map((option) => ({ value: String(option.value), label: String(option.textContent || '').trim() }));
 }
 
+function waitForNotesMutation(timeoutMs = 5000) {
+  const list = document.getElementById('notesList');
+  if (!list) return Promise.reject(new Error('笔记列表不存在'));
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      observer.disconnect();
+      reject(new Error('继续加载笔记超时'));
+    }, timeoutMs);
+    const observer = new MutationObserver(() => {
+      clearTimeout(timer);
+      observer.disconnect();
+      resolve();
+    });
+    observer.observe(list, { childList: true, subtree: true });
+  });
+}
+
+async function loadAllSelectedBookNotes(status) {
+  for (let page = 0; page < 100; page++) {
+    const more = document.querySelector('#notesList .chapter-load-more');
+    if (!more) return;
+    if (status) status.textContent = `正在继续加载这本书的笔记（第 ${page + 2} 批）……`;
+    const changed = waitForNotesMutation();
+    more.click();
+    await changed;
+  }
+  if (document.querySelector('#notesList .chapter-load-more'))
+    throw new Error('这本书的笔记过多，已达到单次导出安全上限');
+}
+
 function installPicker() {
   const section = document.getElementById('unifiedExportSettings');
   const moduleSelect = document.getElementById('yuejiExportModule');
@@ -24,7 +54,12 @@ function installPicker() {
     const previous = picker.value;
     const rows = bookOptions();
     picker.innerHTML = rows.length
-      ? rows.map((row) => `<option value="${row.value.replace(/"/g, '&quot;')}">${row.label.replace(/[&<>]/g, '')}</option>`).join('')
+      ? rows
+          .map(
+            (row) =>
+              `<option value="${row.value.replace(/"/g, '&quot;')}">${row.label.replace(/[&<>]/g, '')}</option>`,
+          )
+          .join('')
       : '<option value="">暂无书籍</option>';
     const currentFilter = document.getElementById('noteBookFilter')?.value || '';
     if (rows.some((row) => row.value === previous)) picker.value = previous;
@@ -67,6 +102,7 @@ function installPicker() {
         filter.value = selected;
         notesPage.classList.add('active');
         await window.yuejiRenderChapterNotes({ reset: true });
+        await loadAllSelectedBookNotes(status);
         exportButton.dataset.noteExportPrepared = selected;
         exportButton.disabled = false;
         exportButton.click();
