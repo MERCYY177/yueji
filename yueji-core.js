@@ -66,7 +66,7 @@
   };
 
   window.Yueji = Object.assign(existing, {
-    version: '20260927-stats-calendar',
+    version: '20260927-finished-shelf',
     errors,
     boot,
     wereadGateway: WEREAD_GATEWAY,
@@ -141,7 +141,7 @@
         'finished-cover-repair',
       );
       appendClassicBridge(
-        './yueji-weread-finished-date-fallback.js?v=20260927-finished-date',
+        './yueji-weread-finished-date-fallback.js?v=20260927-finished-shelf',
         'data-yueji-weread-finished-date-fallback',
         'weread',
         'finished-date-fallback',

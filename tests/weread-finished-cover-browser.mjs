@@ -5,7 +5,7 @@ const chrome = process.env.CHROME_BIN;
 if (!chrome) throw new Error('CHROME_BIN is required');
 const GATEWAY = 'https://yueji-weread-gateway.xiaoshu10088.workers.dev/api/weread';
 const cover = 'https://covers.test/crime.svg';
-const updateTime = Math.floor(new Date('2026-09-27T09:30:00+08:00').getTime() / 1000);
+const readUpdateTime = Math.floor(new Date('2026-09-27T09:30:00+08:00').getTime() / 1000);
 
 const browser = await chromium.launch({
   executablePath: chrome,
@@ -27,31 +27,13 @@ try {
   });
 
   await page.route(GATEWAY, async (route) => {
-    const body = route.request().postDataJSON?.() || {};
-    gatewayRequests.push(body);
-    if (body.api_name === '/book/getprogress') {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          data: {
-            book: {
-              bookId: 'crime-weread',
-              progress: 100,
-              updateTime,
-              recordReadingTime: 3600,
-            },
-          },
-        }),
-      });
-      return;
-    }
-    await route.fulfill({ status: 200, contentType: 'application/json', body: '{"data":{}}' });
+    gatewayRequests.push(route.request().postDataJSON?.() || {});
+    await route.fulfill({ status: 500, contentType: 'application/json', body: '{"message":"test must not use gateway"}' });
   });
 
   await page.goto('http://127.0.0.1:4173/', { waitUntil: 'load' });
   await page.evaluate(() => {
-    sessionStorage.setItem('yueji-weread-key', 'browser-finished-key-1234567890');
+    sessionStorage.removeItem('yueji-weread-key');
   });
   await page.reload({ waitUntil: 'load' });
 
@@ -59,10 +41,10 @@ try {
   await page.waitForFunction(() => typeof window.Yueji?.repairWeReadFinishedDates === 'function');
   await page.waitForSelector('#wereadSettings', { state: 'attached', timeout: 15000 });
 
-  // Full WeRead books/shelf live in the extension's IndexedDB-backed runtime state,
-  // not in compact localStorage. Seed the regression at that authoritative layer so
-  // this test cannot race the asynchronous IndexedDB restore step.
-  await page.evaluate(({ cover }) => {
+  // Reproduce the real archive shape: shelf says the book is finished and has a
+  // last-reading timestamp, but there is no Skill Key, finishTime, or saved 100%
+  // progress detail available to rescue the date.
+  await page.evaluate(({ cover, readUpdateTime }) => {
     state.source = '微信读书';
     state.books = [
       {
@@ -86,15 +68,16 @@ try {
           title: '罪与罚',
           author: '陀思妥耶夫斯基',
           finishReading: '1',
+          readUpdateTime,
           cover,
         },
       ],
     };
-  }, { cover });
+  }, { cover, readUpdateTime });
 
   await page.evaluate(async () => {
-    await window.Yueji.reconcileWeReadFinishedBooks({ fetchMissingDates: true });
-    await window.Yueji.repairWeReadFinishedDates({ fetchMissingDates: true });
+    await window.Yueji.reconcileWeReadFinishedBooks({ fetchMissingDates: false });
+    await window.Yueji.repairWeReadFinishedDates({ fetchMissingDates: false });
   });
 
   await page.waitForFunction(() => {
@@ -113,8 +96,8 @@ try {
   assert.equal(repaired.status, 'done');
   assert.equal(repaired.finishedDate, '2026-09-27');
   assert.equal(repaired.weReadCover, cover);
-  assert.equal(repaired.weReadProgressEvidence?.date, '2026-09-27');
-  assert.equal(repaired.weReadProgressEvidence?.progress, 100);
+  assert.equal(repaired.finishReading, 1);
+  assert.equal(gatewayRequests.length, 0);
 
   await page.evaluate(() => {
     if (!state.sessions.some((row) => row.id === 'crime-month-browser')) {
@@ -164,7 +147,7 @@ try {
   assert.equal(yearly, cover);
 
   console.log(
-    `Browser regression OK: finished date falls back to verified progress updateTime; monthly/year covers remain live; gateway requests=${gatewayRequests.length}`,
+    'Browser regression OK: finished shelf evidence alone repairs monthly finished without Skill Key',
   );
 } finally {
   await browser.close();
