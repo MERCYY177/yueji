@@ -5,7 +5,7 @@ const chrome = process.env.CHROME_BIN;
 if (!chrome) throw new Error('CHROME_BIN is required');
 const GATEWAY = 'https://yueji-weread-gateway.xiaoshu10088.workers.dev/api/weread';
 const cover = 'https://covers.test/crime.svg';
-const finishTime = Math.floor(new Date('2026-09-27T09:30:00+08:00').getTime() / 1000);
+const updateTime = Math.floor(new Date('2026-09-27T09:30:00+08:00').getTime() / 1000);
 
 const browser = await chromium.launch({
   executablePath: chrome,
@@ -38,8 +38,8 @@ try {
             book: {
               bookId: 'crime-weread',
               progress: 100,
-              finishTime,
-              finishReading: true,
+              updateTime,
+              recordReadingTime: 3600,
             },
           },
         }),
@@ -56,6 +56,7 @@ try {
   await page.reload({ waitUntil: 'load' });
 
   await page.waitForFunction(() => typeof window.Yueji?.reconcileWeReadFinishedBooks === 'function');
+  await page.waitForFunction(() => typeof window.Yueji?.repairWeReadFinishedDates === 'function');
   await page.waitForSelector('#wereadSettings', { state: 'attached', timeout: 15000 });
 
   // Full WeRead books/shelf live in the extension's IndexedDB-backed runtime state,
@@ -93,6 +94,7 @@ try {
 
   await page.evaluate(async () => {
     await window.Yueji.reconcileWeReadFinishedBooks({ fetchMissingDates: true });
+    await window.Yueji.repairWeReadFinishedDates({ fetchMissingDates: true });
   });
 
   await page.waitForFunction(() => {
@@ -111,6 +113,8 @@ try {
   assert.equal(repaired.status, 'done');
   assert.equal(repaired.finishedDate, '2026-09-27');
   assert.equal(repaired.weReadCover, cover);
+  assert.equal(repaired.weReadProgressEvidence?.date, '2026-09-27');
+  assert.equal(repaired.weReadProgressEvidence?.progress, 100);
 
   await page.evaluate(() => {
     if (!state.sessions.some((row) => row.id === 'crime-month-browser')) {
@@ -160,7 +164,7 @@ try {
   assert.equal(yearly, cover);
 
   console.log(
-    `Browser regression OK: monthly finished + monthly/year covers use live WeRead state; gateway requests=${gatewayRequests.length}`,
+    `Browser regression OK: finished date falls back to verified progress updateTime; monthly/year covers remain live; gateway requests=${gatewayRequests.length}`,
   );
 } finally {
   await browser.close();
