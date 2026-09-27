@@ -22,7 +22,11 @@ function settings() {
   return readJson(SETTINGS_KEY, { pageFont: 'system' });
 }
 function profile() {
-  return readJson(PROFILE_KEY, { nickname: '', signature: '' });
+  return readJson(PROFILE_KEY, { credit: '', nickname: '', signature: '' });
+}
+function exportCredit() {
+  const p = profile();
+  return String(p.credit || p.nickname || '').trim();
 }
 function openFontDb() {
   return new Promise((resolve, reject) => {
@@ -163,11 +167,9 @@ function sourceForExport(key) {
 function exportTitle(key) {
   return EXPORT_MODULES.find((x) => x.key === key)?.label || '阅迹';
 }
-function exportMetaHtml(showNickname, showDate) {
-  const p = profile();
+function exportMetaHtml(credit, showDate) {
   const bits = [];
-  if (showNickname && p.nickname) bits.push(`<b>${escapeHtml(p.nickname)}</b>`);
-  if (showNickname && p.signature) bits.push(`<span>${escapeHtml(p.signature)}</span>`);
+  if (credit) bits.push(`<b>${escapeHtml(credit)}</b>`);
   if (showDate) bits.push(`<span>${new Date().toLocaleDateString('zh-CN')}</span>`);
   return bits.length ? `<div class="yueji-export-meta">${bits.join(' · ')}</div>` : '';
 }
@@ -191,7 +193,6 @@ async function exportElementPng(source, key, options) {
   const estimatedHeight = Math.max(900, Math.ceil(source.scrollHeight || source.getBoundingClientRect().height || 900));
   if (estimatedHeight > 24000) throw new Error('内容过长，请缩小导出范围后重试');
   const height = Math.min(24000, estimatedHeight + 180);
-  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#5f8f7b';
   const paper = getComputedStyle(document.documentElement).getPropertyValue('--paper').trim() || '#f5f6f8';
   const ink = getComputedStyle(document.documentElement).getPropertyValue('--ink').trim() || '#202124';
   const styleText = [...document.styleSheets]
@@ -203,7 +204,7 @@ async function exportElementPng(source, key, options) {
       }
     })
     .join('\n');
-  const body = `<div class="yueji-export-root"><h1>${escapeHtml(exportTitle(key))}</h1>${exportMetaHtml(options.showNickname, options.showDate)}${clone.outerHTML}</div>`;
+  const body = `<div class="yueji-export-root"><h1>${escapeHtml(exportTitle(key))}</h1>${exportMetaHtml(options.credit, options.showDate)}${clone.outerHTML}</div>`;
   const css = `${font.css}${styleText}
     html,body{margin:0;background:${paper};color:${ink};font-family:${font.family}}
     .yueji-export-root{box-sizing:border-box;width:${width}px;padding:56px;background:${paper};min-height:${height}px}
@@ -245,32 +246,20 @@ function installChapterCollapse() {
   collapseChapterBodies();
   new MutationObserver(collapseChapterBodies).observe(list, { childList: true, subtree: true });
 }
-function installProfileAndFontSettings() {
+function installAppearanceSettings() {
   const sheet = document.getElementById('settingsSheet');
   if (!sheet || document.getElementById('unifiedAppearanceSettings')) return;
-  const p = profile();
   const s = settings();
   const section = document.createElement('div');
   section.className = 'settings-section';
   section.id = 'unifiedAppearanceSettings';
-  section.innerHTML = `<h4>个人与外观</h4><label class="field"><span>昵称</span><input id="yuejiNickname" value=""></label><label class="field"><span>个性签名</span><input id="yuejiSignature" value=""></label><label class="field"><span>页面字体</span><select id="yuejiPageFont"><option value="system">跟随系统</option><option value="huiwen">汇文明朝体</option><option value="custom">自定义字体</option></select></label><label class="soft-btn file-inline">上传自定义字体<input id="yuejiCustomFont" type="file" accept=".woff2,.woff,.ttf,.otf" hidden></label><div class="section-sub" id="yuejiFontStatus">自定义字体只保存在当前浏览器。</div>`;
+  section.innerHTML = `<h4>外观</h4><label class="field"><span>页面字体</span><select id="yuejiPageFont"><option value="system">跟随系统</option><option value="huiwen">汇文明朝体</option><option value="custom">自定义字体</option></select></label><label class="soft-btn file-inline">上传自定义字体<input id="yuejiCustomFont" type="file" accept=".woff2,.woff,.ttf,.otf" hidden></label><div class="section-sub" id="yuejiFontStatus">自定义字体只保存在当前浏览器。</div>`;
   sheet.insertBefore(
     section,
     document.getElementById('wereadSettings') || sheet.querySelector('.settings-section'),
   );
-  const nickname = section.querySelector('#yuejiNickname');
-  const signature = section.querySelector('#yuejiSignature');
   const font = section.querySelector('#yuejiPageFont');
-  nickname.value = p.nickname || '';
-  signature.value = p.signature || '';
   font.value = normalizeFontMode(s.pageFont);
-  const saveProfile = () =>
-    writeJson(PROFILE_KEY, {
-      nickname: nickname.value.trim(),
-      signature: signature.value.trim(),
-    });
-  nickname.addEventListener('change', saveProfile);
-  signature.addEventListener('change', saveProfile);
   font.addEventListener('change', async () => {
     const applied = await applyPageFont(font.value);
     font.value = applied;
@@ -296,8 +285,11 @@ function installExportSettings() {
   const section = document.getElementById('unifiedExportSettings');
   if (!section) return false;
   if (document.getElementById('yuejiExportModule')) return true;
-  section.innerHTML = `<h4>导出图片</h4><div class="section-sub">所有图片导出都集中在这里；内容页不再显示导出按钮。</div><label class="field"><span>导出内容</span><select id="yuejiExportModule">${EXPORT_MODULES.map((x) => `<option value="${x.key}">${x.label}</option>`).join('')}</select></label><label class="field"><span>导出字体</span><select id="yuejiExportFont"><option value="system">系统字体</option><option value="huiwen">汇文明朝体</option><option value="custom">自定义字体</option></select></label><label class="check-line"><input id="yuejiExportNickname" type="checkbox" checked><span>显示昵称 / 个性签名</span></label><label class="check-line"><input id="yuejiExportDate" type="checkbox" checked><span>显示导出日期</span></label><button class="primary-btn" id="yuejiExportPng">生成 PNG</button><div class="section-sub" id="yuejiExportStatus"></div>`;
+  section.innerHTML = `<h4>导出图片</h4><div class="section-sub">所有图片导出都集中在这里；内容页不再显示导出按钮。</div><label class="field"><span>导出内容</span><select id="yuejiExportModule">${EXPORT_MODULES.map((x) => `<option value="${x.key}">${x.label}</option>`).join('')}</select></label><label class="field"><span>导出署名（可选）</span><input id="yuejiExportCredit" placeholder="例如：小树"></label><label class="field"><span>导出字体</span><select id="yuejiExportFont"><option value="system">系统字体</option><option value="huiwen">汇文明朝体</option><option value="custom">自定义字体</option></select></label><label class="check-line"><input id="yuejiExportDate" type="checkbox" checked><span>显示导出日期</span></label><button class="primary-btn" id="yuejiExportPng">生成 PNG</button><div class="section-sub" id="yuejiExportStatus"></div>`;
   section.querySelector('#yuejiExportFont').value = normalizeFontMode(settings().pageFont);
+  const credit = section.querySelector('#yuejiExportCredit');
+  credit.value = exportCredit();
+  credit.addEventListener('change', () => writeJson(PROFILE_KEY, { credit: credit.value.trim() }));
   section.querySelector('#yuejiExportPng').onclick = async () => {
     const button = section.querySelector('#yuejiExportPng');
     const status = section.querySelector('#yuejiExportStatus');
@@ -305,9 +297,11 @@ function installExportSettings() {
     try {
       button.disabled = true;
       status.textContent = '正在生成图片……';
+      const exportCreditValue = credit.value.trim();
+      writeJson(PROFILE_KEY, { credit: exportCreditValue });
       await exportElementPng(sourceForExport(key), key, {
         fontMode: section.querySelector('#yuejiExportFont').value,
-        showNickname: section.querySelector('#yuejiExportNickname').checked,
+        credit: exportCreditValue,
         showDate: section.querySelector('#yuejiExportDate').checked,
       });
       status.textContent = 'PNG 已生成。';
@@ -329,7 +323,7 @@ function installExportSettingsWhenReady() {
 }
 async function install() {
   await applyPageFont();
-  installProfileAndFontSettings();
+  installAppearanceSettings();
   installExportSettingsWhenReady();
   installChapterCollapse();
 }
