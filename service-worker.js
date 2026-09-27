@@ -22,6 +22,8 @@ const SHELL = [
   './yueji-weread-reading.js',
   './yueji-unified-ui-model.js',
   './yueji-unified.js',
+  './yueji-appearance-model.js',
+  './yueji-appearance.js',
   './vendor/jszip.min.js',
   './vendor/sql-asm.js',
 ];
