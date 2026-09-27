@@ -22,6 +22,10 @@ const entries = [
   'yueji-book-cover.js',
   'yueji-onboarding.js',
   'yueji-features.js',
+  'yueji-reading-model.js',
+  'yueji-weread-reading.js',
+  'yueji-unified-ui-model.js',
+  'yueji-unified.js',
   'netlify.toml',
   'assets',
   'vendor',
@@ -38,5 +42,11 @@ for (const asset of [
   if (!html.includes(asset)) throw new Error(`Build output does not reference ${asset}`);
   await stat(`${output}/${asset}`);
 }
+for (const asset of [
+  'yueji-reading-model.js',
+  'yueji-weread-reading.js',
+  'yueji-unified-ui-model.js',
+  'yueji-unified.js',
+]) await stat(`${output}/${asset}`);
 await import('./verify-dist.mjs');
 console.log('Build OK: dist/');
