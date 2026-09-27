@@ -12,9 +12,7 @@
 
   function finishFlag(value) {
     if (value === true || value === 1) return true;
-    const normalized = String(value ?? '')
-      .trim()
-      .toLowerCase();
+    const normalized = String(value ?? '').trim().toLowerCase();
     return normalized === '1' || normalized === 'true';
   }
 
@@ -79,6 +77,7 @@
     }
     if (typeof save === 'function') {
       save();
+      if (typeof renderAll === 'function') renderAll();
       return;
     }
     try {
@@ -125,8 +124,7 @@
       author = normalizeAuthor(target?.author);
     if (!title) return '';
     const sibling = (archive.books || []).find((item) => {
-      if (item === target) return false;
-      if (normalizeText(item?.title) !== title) return false;
+      if (item === target || normalizeText(item?.title) !== title) return false;
       const otherAuthor = normalizeAuthor(item?.author);
       return (!author || !otherAuthor || author === otherAuthor) && (item?.cover || item?.weReadCover);
     });
@@ -139,10 +137,7 @@
     const gateway = window.Yueji?.wereadGateway || '/.netlify/functions/weread-gateway';
     const response = await fetch(gateway, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${key}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         api_name: '/book/getprogress',
         skill_version: '1.0.4',
@@ -156,9 +151,8 @@
   }
 
   function monthFinishedBooks() {
-    const archive = archiveState();
-    const picker = document.getElementById('monthPicker');
-    const prefix = String(picker?.value || '').slice(0, 7);
+    const archive = archiveState(),
+      prefix = String(document.getElementById('monthPicker')?.value || '').slice(0, 7);
     if (!archive || !prefix) return [];
     return (archive.books || []).filter(
       (book) =>
@@ -191,7 +185,7 @@
       img.addEventListener('load', () => parent?.classList.add('has-image'));
       img.addEventListener('error', () => parent?.classList.remove('has-image'));
     }
-    if (img.getAttribute('src') !== fallback) img.src = fallback;
+    if (img.getAttribute('src') !== img.dataset.coverFallback) img.src = img.dataset.coverFallback;
     parent?.classList.add('has-image');
   }
 
