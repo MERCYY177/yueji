@@ -61,8 +61,12 @@ try {
   assert.equal(keyState.persist, null);
   assert.equal(keyState.session, 'browser-smoke-secret');
 
+  await page.click('#settingsBtn');
+  await page.waitForSelector('#loadDemo', { state: 'visible', timeout: 10000 });
+
   // The old "remember Key" control remains only for compatibility in the
-  // extension markup; unified UI must force it hidden and unchecked.
+  // extension markup; unified UI must force it hidden and unchecked even while
+  // the rest of the settings sheet is visible.
   await page.waitForSelector('#wereadRememberKey', { state: 'attached', timeout: 15000 });
   assert.equal(await page.locator('#wereadRememberKey').isChecked(), false);
   assert.equal(await page.locator('#wereadRememberKey').locator('xpath=..').isVisible(), false);
