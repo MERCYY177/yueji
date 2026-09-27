@@ -67,6 +67,9 @@
   import('./yueji-unified.js?v=20260927-unified').catch((error) => {
     errors.capture(error, { area: 'ui', stage: 'unified-layout', recoverable: true });
   });
+  import('./yueji-appearance.js?v=20260927-unified').catch((error) => {
+    errors.capture(error, { area: 'ui', stage: 'appearance-export', recoverable: true });
+  });
 
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     window.addEventListener(
