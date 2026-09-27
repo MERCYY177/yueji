@@ -34,6 +34,14 @@ test('official summary sync gate is installed before the unified summary module'
   assert.match(gate, /mode === 'annually'/);
 });
 
+test('appearance export controls retry when unified export container arrives later', async () => {
+  const appearance = await text('yueji-appearance.js');
+  assert.match(appearance, /function installExportSettingsWhenReady/);
+  assert.match(appearance, /if \(installExportSettings\(\)\) return/);
+  assert.match(appearance, /new MutationObserver/);
+  assert.match(appearance, /if \(installExportSettings\(\)\) observer\.disconnect\(\)/);
+});
+
 test('notes are collapsed for browsing but fully expanded only in exported note images', async () => {
   const appearance = await text('yueji-appearance.js');
   assert.match(appearance, /collapseChapterBodies/);
