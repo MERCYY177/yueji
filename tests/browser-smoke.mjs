@@ -22,7 +22,7 @@ try {
 
   await page.goto('http://127.0.0.1:4173/', { waitUntil: 'load' });
   await page.waitForSelector('#unifiedYearCard', { timeout: 15000 });
-  await page.waitForSelector('#yuejiExportModule', { timeout: 15000 });
+  await page.waitForSelector('#yuejiExportModule', { state: 'attached', timeout: 15000 });
 
   const navLabels = await page.locator('.bottom-nav .nav-btn').allTextContents();
   assert.equal(navLabels.length, 4, `expected four primary tabs, got ${navLabels.length}`);
@@ -63,6 +63,7 @@ try {
 
   await page.click('#settingsBtn');
   await page.waitForSelector('#loadDemo', { state: 'visible', timeout: 10000 });
+  await page.waitForSelector('#yuejiExportModule', { state: 'visible', timeout: 10000 });
 
   // The old "remember Key" control remains only for compatibility in the
   // extension markup; unified UI must force it hidden and unchecked even while
