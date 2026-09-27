@@ -24,12 +24,14 @@ test('unified UI keeps four primary tabs and treats incomplete calendar months a
   assert.match(unified, /全部/);
 });
 
-test('official summary waits for the primary WeRead sync to become idle', async () => {
-  const unified = await text('yueji-unified.js');
-  assert.match(unified, /function waitForPrimarySyncIdle/);
-  assert.match(unified, /wereadSyncBtn/);
-  assert.match(unified, /__yuejiWeReadSyncing/);
-  assert.match(unified, /await waitForPrimarySyncIdle\(\)/);
+test('official summary sync gate is installed before the unified summary module', async () => {
+  const core = await text('yueji-core.js');
+  const gate = await text('yueji-sync-gate.js');
+  assert.match(core, /import\('\.\/yueji-sync-gate\.js[^']*'\)\s*\.then\(\(\) => import\('\.\/yueji-unified\.js/);
+  assert.match(gate, /function waitForPrimarySyncIdle/);
+  assert.match(gate, /wereadSyncBtn/);
+  assert.match(gate, /__yuejiWeReadSyncing/);
+  assert.match(gate, /mode === 'annually'/);
 });
 
 test('notes are collapsed for browsing but fully expanded only in exported note images', async () => {
@@ -47,6 +49,7 @@ test('build and service worker both include all unified runtime modules', async 
     'yueji-reading-model.js',
     'yueji-weread-reading.js',
     'yueji-unified-ui-model.js',
+    'yueji-sync-gate.js',
     'yueji-unified.js',
     'yueji-appearance-model.js',
     'yueji-appearance.js',
