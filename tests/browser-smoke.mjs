@@ -21,7 +21,10 @@ async function runtimeDiagnostics(page, label) {
     appearanceStyle: Boolean(document.getElementById('yuejiAppearanceStyle')),
     exportBookPicker: Boolean(document.getElementById('yuejiExportBook')),
     settingsSheet: Boolean(document.getElementById('settingsSheet')),
-    settingsSections: [...document.querySelectorAll('#settingsSheet .settings-section')].map((x) => x.id || x.querySelector('h4')?.textContent || ''),
+    guideVisible: document.getElementById('yuejiGuide')?.classList.contains('show') || false,
+    settingsSections: [...document.querySelectorAll('#settingsSheet .settings-section')].map(
+      (x) => x.id || x.querySelector('h4')?.textContent || '',
+    ),
     yuejiVersion: window.Yueji?.version || '',
     yuejiErrors: window.Yueji?.errors?.history || [],
   }));
@@ -65,11 +68,51 @@ try {
     '当前月份统计',
   ]);
 
-  // Legacy releases could persist the Skill Key. A reload must migrate it to
-  // sessionStorage and clear both legacy localStorage entries before sync boot.
+  // Follow the real first-run flow rather than forcing clicks through the guide.
+  const guideClose = page.locator('#yuejiGuide.show [data-guide-close]');
+  if (await guideClose.isVisible()) await guideClose.click();
+
+  // Seed one deterministic local book while also emulating a legacy persisted
+  // Skill Key. The reload must keep the archive, migrate the Key to the current
+  // session, and clear both legacy localStorage entries.
   await page.evaluate(() => {
     localStorage.setItem('yueji-weread-key', 'browser-smoke-secret');
     localStorage.setItem('yueji-weread-key-persist-v1', '1');
+    localStorage.setItem(
+      'yueji-archive-v1',
+      JSON.stringify({
+        source: '浏览器测试',
+        accent: '#5f8f7b',
+        books: [
+          {
+            key: 'browser-smoke-book',
+            title: '浏览器测试书',
+            author: '测试作者',
+            category: '测试',
+            progress: 25,
+            status: 'reading',
+            minutes: 15,
+            words: 1000,
+            days: 1,
+            color: '#66788d',
+            sources: ['manual'],
+          },
+        ],
+        sessions: [
+          {
+            id: 'browser-smoke-session',
+            date: '2026-09-27',
+            bookKey: 'browser-smoke-book',
+            minutes: 15,
+            words: 1000,
+            source: 'manual',
+          },
+        ],
+        journals: {},
+        highlights: [],
+        importedAt: '2026-09-27T00:00:00.000Z',
+      }),
+    );
   });
   await page.reload({ waitUntil: 'load' });
   await page.waitForSelector('#unifiedYearCard', { timeout: 15000 });
@@ -83,7 +126,6 @@ try {
   assert.equal(keyState.session, 'browser-smoke-secret');
 
   await page.click('#settingsBtn');
-  await page.waitForSelector('#loadDemo', { state: 'visible', timeout: 10000 });
   await page.waitForSelector('#yuejiExportModule', { state: 'visible', timeout: 10000 });
 
   // The old "remember Key" control remains only for compatibility in the
@@ -93,10 +135,8 @@ try {
   assert.equal(await page.locator('#wereadRememberKey').isChecked(), false);
   assert.equal(await page.locator('#wereadRememberKey').locator('xpath=..').isVisible(), false);
 
-  // Populate deterministic local data so the Settings-based single-book export
-  // picker can be tested without any real WeRead credentials.
-  page.once('dialog', (dialog) => dialog.accept());
-  await page.click('#loadDemo');
+  // The Settings-based single-book export must work independently of whatever
+  // was previously selected on the Notes page.
   await page.waitForFunction(() => document.querySelectorAll('#noteBookFilter option').length > 1);
   await page.selectOption('#yuejiExportModule', 'book-notes');
   await page.waitForFunction(() => {
@@ -104,6 +144,7 @@ try {
     const picker = document.getElementById('yuejiExportBook');
     return field && !field.hidden && picker && picker.options.length > 0 && picker.value;
   });
+  assert.equal(await page.locator('#yuejiExportBook').inputValue(), 'browser-smoke-book');
 
   // Exercise the actual SVG -> Canvas -> PNG path in Chromium. This catches the
   // tainted-canvas class of failures that static tests cannot see.
