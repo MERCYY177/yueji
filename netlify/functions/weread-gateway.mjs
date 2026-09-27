@@ -93,7 +93,15 @@ function compactPayload(apiName, payload) {
   if (apiName === '/shelf/sync')
     data = { books: (Array.isArray(source.books) ? source.books : []).map(compactBook) };
   else if (apiName === '/readdata/detail')
-    data = pick(source, ['dailyReadTimes', 'readTimes', 'registTime']);
+    data = pick(source, [
+      'totalReadTime',
+      'readDays',
+      'booksRead',
+      'booksFinished',
+      'dailyReadTimes',
+      'readTimes',
+      'registTime',
+    ]);
   else if (apiName === '/book/getprogress')
     data = {
       book: pick(source.book || source, [
@@ -132,6 +140,9 @@ function compactPayload(apiName, payload) {
       chapters: (Array.isArray(source.chapters) ? source.chapters : []).map((chapter) =>
         pick(chapter, ['chapterUid', 'chapterIdx', 'title']),
       ),
+      removed: (Array.isArray(source.removed) ? source.removed : []).map((item) =>
+        item && typeof item === 'object' ? pick(item, ['bookmarkId', 'id']) : item,
+      ),
     };
   else if (apiName === '/review/list/mine')
     data = {
@@ -150,6 +161,9 @@ function compactPayload(apiName, payload) {
       })),
       synckey: source.synckey,
       hasMore: Boolean(source.hasMore),
+      removed: (Array.isArray(source.removed) ? source.removed : []).map((item) =>
+        item && typeof item === 'object' ? pick(item, ['reviewId', 'id']) : item,
+      ),
     };
   else data = source;
   return wrapped ? { ...pick(payload, ['errcode', 'errmsg', 'message']), data } : data;
@@ -189,9 +203,6 @@ export default async (request) => {
     return json({ message: '这个微信读书接口不在阅迹允许列表中' }, 403);
   }
 
-  // WeRead's current official Skill version is 1.0.4.
-  // Force the proxy to report the supported version even if an older cached
-  // front-end sends another value.
   const allowed = API_FIELDS[apiName] || [],
     safePayload = { api_name: apiName, skill_version: '1.0.4' };
   for (const field of allowed)

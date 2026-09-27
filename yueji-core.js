@@ -43,7 +43,18 @@
     },
   };
 
-  window.Yueji = Object.assign(existing, { version: '20260919-r1', errors, boot });
+  window.Yueji = Object.assign(existing, { version: '20260927-unified', errors, boot });
+
+  // Migrate old releases that allowed a WeRead Skill Key to persist in localStorage.
+  // The unified release keeps it only for the current browser session and removes
+  // both legacy localStorage entries before the extension boot code can read them.
+  try {
+    const legacyKey = localStorage.getItem('yueji-weread-key');
+    if (legacyKey && !sessionStorage.getItem('yueji-weread-key'))
+      sessionStorage.setItem('yueji-weread-key', legacyKey);
+    localStorage.removeItem('yueji-weread-key');
+    localStorage.removeItem('yueji-weread-key-persist-v1');
+  } catch {}
 
   if (!document.querySelector('link[data-yueji-theme]')) {
     const theme = document.createElement('link');
@@ -64,6 +75,36 @@
   import('./yueji-release-ui.js?v=20260918-r2').catch((error) => {
     errors.capture(error, { area: 'ui', stage: 'release-refresh', recoverable: true });
   });
+  import('./yueji-sync-gate.js?v=20260927-unified')
+    .then(() => import('./yueji-unified.js?v=20260927-unified'))
+    .catch((error) => {
+      errors.capture(error, { area: 'ui', stage: 'unified-layout', recoverable: true });
+    });
+  import('./yueji-appearance.js?v=20260927-unified')
+    .then(() => import('./yueji-export-book-picker.js?v=20260927-unified'))
+    .catch((error) => {
+      errors.capture(error, { area: 'ui', stage: 'appearance-export', recoverable: true });
+    });
+
+  // This bridge must run as a classic script after app.js so it can wrap the
+  // existing portable backup functions without duplicating their book/highlight/cover logic.
+  document.addEventListener(
+    'DOMContentLoaded',
+    () => {
+      if (document.querySelector('script[data-yueji-backup-extension]')) return;
+      const script = document.createElement('script');
+      script.src = './yueji-backup-extension.js?v=20260927-unified';
+      script.dataset.yuejiBackupExtension = '1';
+      script.onerror = () =>
+        errors.capture(new Error('backup extension failed to load'), {
+          area: 'backup',
+          stage: 'unified-metadata',
+          recoverable: true,
+        });
+      document.body.append(script);
+    },
+    { once: true },
+  );
 
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     window.addEventListener(

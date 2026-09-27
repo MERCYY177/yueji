@@ -1,4 +1,4 @@
-const CACHE = 'yueji-shell-20260919-r1';
+const CACHE = 'yueji-shell-20260927-unified';
 const SHELL = [
   './',
   './index.html',
@@ -18,12 +18,26 @@ const SHELL = [
   './yueji-book-cover.js',
   './yueji-onboarding.js',
   './yueji-features.js',
+  './yueji-reading-model.js',
+  './yueji-weread-reading.js',
+  './yueji-unified-ui-model.js',
+  './yueji-sync-gate.js',
+  './yueji-unified.js',
+  './yueji-appearance-model.js',
+  './yueji-appearance.js',
+  './yueji-export-book-picker.js',
+  './yueji-backup-extension.js',
   './vendor/jszip.min.js',
   './vendor/sql-asm.js',
 ];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)));
+  event.waitUntil(
+    caches
+      .open(CACHE)
+      .then((cache) => cache.addAll(SHELL))
+      .then(() => self.skipWaiting()),
+  );
 });
 
 self.addEventListener('activate', (event) => {
@@ -31,7 +45,11 @@ self.addEventListener('activate', (event) => {
     caches
       .keys()
       .then((keys) =>
-        Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))),
+        Promise.all(
+          keys
+            .filter((key) => key.startsWith('yueji-shell-') && key !== CACHE)
+            .map((key) => caches.delete(key)),
+        ),
       )
       .then(() => self.clients.claim()),
   );

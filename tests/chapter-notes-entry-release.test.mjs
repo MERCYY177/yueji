@@ -8,5 +8,5 @@ test('single renderer entry is shipped in build and offline shell', async () => 
 
   assert.match(build, /['"]yueji-notes-entry\.js['"]/);
   assert.match(serviceWorker, /['"]\.\/yueji-notes-entry\.js['"]/);
-  assert.match(serviceWorker, /yueji-shell-20260919-r1/);
+  assert.match(serviceWorker, /const CACHE = ['"]yueji-shell-[^'"]+['"]/);
 });

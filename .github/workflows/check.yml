@@ -1,0 +1,47 @@
+name: Check Yueji
+
+on:
+  push:
+    branches:
+      - feat/yueji-weread-unification
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Syntax, tests and build
+        run: npm run check
+      - name: Install browser smoke dependency
+        run: npm install --no-save --package-lock=false playwright-core@1.55.0
+      - name: Browser smoke
+        shell: bash
+        run: |
+          python3 -m http.server 4173 --directory dist >/tmp/yueji-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:4173/ >/dev/null; then break; fi
+            sleep 0.2
+          done
+          CHROME_BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          if [ -z "$CHROME_BIN" ]; then
+            echo 'No system Chrome/Chromium found'
+            exit 1
+          fi
+          CHROME_BIN="$CHROME_BIN" node tests/browser-smoke.mjs
