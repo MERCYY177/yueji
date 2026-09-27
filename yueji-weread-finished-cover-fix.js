@@ -37,7 +37,22 @@
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
   }
 
+  async function waitForWeReadRuntimeReady(timeoutMs = 15000) {
+    if (typeof localStorage === 'undefined') return true;
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      if (document.getElementById('wereadSettings')) return true;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    return false;
+  }
+
   function archiveState() {
+    // Once the extension runtime has hydrated IndexedDB, the live classic-script
+    // state is authoritative for WeRead-only books and shelf metadata.
+    try {
+      if (typeof state !== 'undefined' && state && typeof state === 'object') return state;
+    } catch {}
     try {
       if (typeof localStorage !== 'undefined' && typeof localStorage.getItem === 'function') {
         const raw = localStorage.getItem(STORAGE_KEY);
@@ -45,14 +60,7 @@
         if (archive && typeof archive === 'object') return archive;
       }
     } catch {}
-    // Compatibility fallback for the classic-script runtime and unit harnesses.
-    // Real browser releases prefer the persisted snapshot above so this bridge
-    // does not depend on another script's lexical binding being visible.
-    try {
-      return typeof state !== 'undefined' && state && typeof state === 'object' ? state : null;
-    } catch {
-      return null;
-    }
+    return null;
   }
 
   async function persistArchive(archive) {
@@ -62,9 +70,9 @@
       if (typeof renderAll === 'function') renderAll();
       return;
     }
-    // Older classic-script builds already expose save()/renderAll(). When the
-    // archive object is the live state reference, mutating it + save() is the
-    // correct persistence path.
+    if (typeof window.yuejiPersistExternalState === 'function') {
+      await window.yuejiPersistExternalState(archive);
+    }
     if (typeof save === 'function') {
       save();
       if (typeof renderAll === 'function') renderAll();
@@ -104,6 +112,10 @@
   }
 
   async function reconcileWeReadFinishedBooks({ fetchMissingDates = true } = {}) {
+    // In real browsers, wait until yueji-extension has finished restoring its
+    // IndexedDB snapshot before touching WeRead-only books. Unit/legacy classic
+    // script environments without localStorage stay synchronous here.
+    if (typeof localStorage !== 'undefined') await waitForWeReadRuntimeReady();
     const archive = archiveState();
     if (!archive?.books?.length) return false;
     const shelf = Array.isArray(archive.weRead?.shelfBooks) ? archive.weRead.shelfBooks : [];
