@@ -42,6 +42,16 @@ test('notes are collapsed for browsing but fully expanded only in exported note 
   assert.match(appearance, /details\.open = true/);
 });
 
+test('single-book note export chooses a book and exhausts paginated notes first', async () => {
+  const picker = await text('yueji-export-book-picker.js');
+  const core = await text('yueji-core.js');
+  assert.match(core, /yueji-export-book-picker\.js/);
+  assert.match(picker, /选择书籍/);
+  assert.match(picker, /yuejiRenderChapterNotes/);
+  assert.match(picker, /chapter-load-more/);
+  assert.match(picker, /loadAllSelectedBookNotes/);
+});
+
 test('build and service worker both include all unified runtime modules', async () => {
   const build = await text('scripts/build.mjs');
   const serviceWorker = await text('service-worker.js');
@@ -53,6 +63,7 @@ test('build and service worker both include all unified runtime modules', async 
     'yueji-unified.js',
     'yueji-appearance-model.js',
     'yueji-appearance.js',
+    'yueji-export-book-picker.js',
     'yueji-backup-extension.js',
   ]) {
     assert.ok(build.includes(asset), `${asset} missing from build`);
