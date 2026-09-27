@@ -115,13 +115,16 @@ try {
   page.on('pageerror', (error) => pageErrors.push(String(error?.stack || error)));
 
   await page.goto('http://127.0.0.1:4173/', { waitUntil: 'load' });
-  await page.waitForSelector('#unifiedYearCard', { timeout: 15000 });
-  await page.waitForSelector('#statsCalendarCard', { timeout: 15000 });
+  await page.waitForSelector('#unifiedYearCard', { state: 'attached', timeout: 15000 });
+  await page.waitForSelector('#statsCalendarCard', { state: 'attached', timeout: 15000 });
   await page.waitForTimeout(600);
   const initialDiagnostics = await runtimeDiagnostics(page, 'initial');
   assert.equal(initialDiagnostics.wereadGateway, GATEWAY);
   if (!initialDiagnostics.exportModule)
     throw new Error(`Export module did not mount: ${JSON.stringify(initialDiagnostics)}`);
+
+  const guideClose = page.locator('#yuejiGuide.show [data-guide-close]');
+  if (await guideClose.isVisible()) await guideClose.click();
 
   const navLabels = await page.locator('.bottom-nav .nav-btn').allTextContents();
   assert.equal(navLabels.length, 4, `expected four primary tabs, got ${navLabels.length}`);
@@ -143,9 +146,6 @@ try {
     '阅读统计',
     '当前月份统计',
   ]);
-
-  const guideClose = page.locator('#yuejiGuide.show [data-guide-close]');
-  if (await guideClose.isVisible()) await guideClose.click();
 
   await page.evaluate(() => {
     localStorage.setItem('yueji-weread-key', 'browser-smoke-secret');
@@ -187,8 +187,8 @@ try {
     );
   });
   await page.reload({ waitUntil: 'load' });
-  await page.waitForSelector('#unifiedYearCard', { timeout: 15000 });
-  await page.waitForSelector('#statsCalendarCard', { timeout: 15000 });
+  await page.waitForSelector('#unifiedYearCard', { state: 'attached', timeout: 15000 });
+  await page.waitForSelector('#statsCalendarCard', { state: 'attached', timeout: 15000 });
   await page.waitForFunction(() => window.Yueji?.wereadGateway?.includes('workers.dev'));
   const keyState = await page.evaluate(() => ({
     local: localStorage.getItem('yueji-weread-key'),
