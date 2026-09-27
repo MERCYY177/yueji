@@ -82,6 +82,26 @@
     errors.capture(error, { area: 'ui', stage: 'appearance-export', recoverable: true });
   });
 
+  // This bridge must run as a classic script after app.js so it can wrap the
+  // existing portable backup functions without duplicating their book/highlight/cover logic.
+  document.addEventListener(
+    'DOMContentLoaded',
+    () => {
+      if (document.querySelector('script[data-yueji-backup-extension]')) return;
+      const script = document.createElement('script');
+      script.src = './yueji-backup-extension.js?v=20260927-unified';
+      script.dataset.yuejiBackupExtension = '1';
+      script.onerror = () =>
+        errors.capture(new Error('backup extension failed to load'), {
+          area: 'backup',
+          stage: 'unified-metadata',
+          recoverable: true,
+        });
+      document.body.append(script);
+    },
+    { once: true },
+  );
+
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     window.addEventListener(
       'load',
