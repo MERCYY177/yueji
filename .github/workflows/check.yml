@@ -3,7 +3,7 @@ name: Check Yueji
 on:
   push:
     branches:
-      - feat/yueji-weread-unification
+      - 'feat/**'
   pull_request:
     branches:
       - main
