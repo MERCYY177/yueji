@@ -155,9 +155,93 @@
     return data?.book && typeof data.book === 'object' ? data.book : data;
   }
 
+  function monthFinishedBooks() {
+    const archive = archiveState();
+    const picker = document.getElementById('monthPicker');
+    const prefix = String(picker?.value || '').slice(0, 7);
+    if (!archive || !prefix) return [];
+    return (archive.books || []).filter(
+      (book) =>
+        !book?.hidden &&
+        String(book?.finishedDate || '').startsWith(prefix) &&
+        (book?.status === 'done' || Number(book?.progress || 0) >= 99.95 || isWeReadFinished(book)),
+    );
+  }
+
+  function renderFinishedForMonth() {
+    const root = document.getElementById('monthFinished');
+    if (!root) return;
+    const rows = monthFinishedBooks();
+    root.innerHTML = rows.length
+      ? rows.map((book) => `<div>${String(book?.title || '未命名书籍')}</div>`).join('')
+      : '<div class="empty-text">暂无</div>';
+  }
+
+  function addCoverFallback(img) {
+    if (!(img instanceof HTMLImageElement) || !img.dataset.coverKey) return;
+    const fallback = coverForBookKey(img.dataset.coverKey);
+    if (!fallback) return;
+    img.dataset.coverFallback = fallback;
+    img.referrerPolicy = 'no-referrer';
+    const parent = img.closest(
+      '.cover-art,.layout-cover-art,.home-recent-cover,.month-book-cover,.poster-cover,.note-book-cover,.day-cover',
+    );
+    if (img.dataset.coverFallbackBound !== '1') {
+      img.dataset.coverFallbackBound = '1';
+      img.addEventListener('load', () => parent?.classList.add('has-image'));
+      img.addEventListener('error', () => parent?.classList.remove('has-image'));
+    }
+    if (img.getAttribute('src') !== fallback) img.src = fallback;
+    parent?.classList.add('has-image');
+  }
+
+  function applyCoverFallbacks(root = document) {
+    if (!root) return;
+    if (root instanceof HTMLImageElement) addCoverFallback(root);
+    root.querySelectorAll?.('img[data-cover-key]').forEach(addCoverFallback);
+  }
+
+  function applyYearCoverFallbacks(root = document.getElementById('yearWallPreview')) {
+    applyCoverFallbacks(root);
+  }
+
+  function patchDerivedRenderers() {
+    try {
+      if (typeof renderMonthly === 'function' && !renderMonthly.__yuejiFinishedCoverPatched) {
+        const baseMonthly = renderMonthly;
+        const wrappedMonthly = function (...args) {
+          const result = baseMonthly.apply(this, args);
+          renderFinishedForMonth();
+          applyCoverFallbacks(document.getElementById('monthSeenBooks'));
+          return result;
+        };
+        wrappedMonthly.__yuejiFinishedCoverPatched = true;
+        renderMonthly = wrappedMonthly;
+        window.renderMonthly = wrappedMonthly;
+      }
+    } catch {}
+    try {
+      const currentYear = window.renderYearWall || (typeof renderYearWall === 'function' ? renderYearWall : null);
+      if (typeof currentYear === 'function' && !currentYear.__yuejiFinishedCoverPatched) {
+        const wrappedYear = async function (...args) {
+          const result = await currentYear.apply(this, args);
+          applyCoverFallbacks(document.getElementById('yearWallPreview'));
+          return result;
+        };
+        wrappedYear.__yuejiFinishedCoverPatched = true;
+        try {
+          renderYearWall = wrappedYear;
+        } catch {}
+        window.renderYearWall = wrappedYear;
+      }
+    } catch {}
+  }
+
   function refreshDerivedPanels() {
+    patchDerivedRenderers();
     try {
       if (typeof renderMonthly === 'function' && document.getElementById('monthFinished')) renderMonthly();
+      else renderFinishedForMonth();
     } catch (error) {
       window.Yueji?.errors?.capture?.(error, {
         area: 'ui',
@@ -167,8 +251,8 @@
       });
     }
     try {
-      if (typeof renderYearWall === 'function' && document.getElementById('yearWallPreview'))
-        (window.renderYearWall || renderYearWall)();
+      const yearRenderer = window.renderYearWall || (typeof renderYearWall === 'function' ? renderYearWall : null);
+      if (typeof yearRenderer === 'function' && document.getElementById('yearWallPreview')) void yearRenderer();
     } catch (error) {
       window.Yueji?.errors?.capture?.(error, {
         area: 'ui',
@@ -177,6 +261,7 @@
         quiet: true,
       });
     }
+    applyCoverFallbacks(document);
   }
 
   async function reconcileWeReadFinishedBooks({ fetchMissingDates = true } = {}) {
@@ -188,9 +273,7 @@
     }
     const shelf = Array.isArray(archive.weRead?.shelfBooks) ? archive.weRead.shelfBooks : [];
     const shelfById = new Map(
-      shelf
-        .filter((item) => item?.bookId)
-        .map((item) => [String(item.bookId), item]),
+      shelf.filter((item) => item?.bookId).map((item) => [String(item.bookId), item]),
     );
     let changed = false;
 
@@ -275,37 +358,7 @@
       }
     }
     refreshDerivedPanels();
-    applyCoverFallbacks();
     return changed;
-  }
-
-  function addCoverFallback(img) {
-    if (!(img instanceof HTMLImageElement) || !img.dataset.coverKey) return;
-    const fallback = coverForBookKey(img.dataset.coverKey);
-    if (!fallback) return;
-    img.dataset.coverFallback = fallback;
-    img.referrerPolicy = 'no-referrer';
-    const parent = img.closest(
-      '.cover-art,.layout-cover-art,.home-recent-cover,.month-book-cover,.poster-cover,.note-book-cover,.day-cover',
-    );
-    if (img.dataset.coverFallbackBound !== '1') {
-      img.dataset.coverFallbackBound = '1';
-      img.addEventListener('load', () => parent?.classList.add('has-image'));
-      img.addEventListener('error', () => {
-        parent?.classList.remove('has-image');
-      });
-    }
-    if (!img.getAttribute('src')) img.src = img.dataset.coverFallback;
-  }
-
-  function applyCoverFallbacks(root = document) {
-    if (!root) return;
-    if (root instanceof HTMLImageElement) addCoverFallback(root);
-    root.querySelectorAll?.('img[data-cover-key]').forEach(addCoverFallback);
-  }
-
-  function applyYearCoverFallbacks(root = document.getElementById('yearWallPreview')) {
-    applyCoverFallbacks(root);
   }
 
   function patchHydrateCovers() {
@@ -353,7 +406,6 @@
         setTimeout(async () => {
           await waitForPrimarySyncIdle();
           await reconcileWeReadFinishedBooks({ fetchMissingDates: true });
-          applyCoverFallbacks();
         }, 0);
       },
       true,
@@ -367,15 +419,17 @@
     window.Yueji.applyCoverFallbacks = applyCoverFallbacks;
     window.Yueji.applyYearCoverFallbacks = applyYearCoverFallbacks;
     window.Yueji.coverForBookKey = coverForBookKey;
+    window.Yueji.renderFinishedForMonth = renderFinishedForMonth;
+    patchDerivedRenderers();
     patchHydrateCovers();
     observeCoverNodes();
     installSyncRecovery();
     void reconcileWeReadFinishedBooks({
       fetchMissingDates: Boolean(sessionStorage.getItem(SESSION_KEY)),
     }).then(() => {
+      patchDerivedRenderers();
       patchHydrateCovers();
       refreshDerivedPanels();
-      applyCoverFallbacks();
     });
   }
 
