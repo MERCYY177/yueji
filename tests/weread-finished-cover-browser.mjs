@@ -18,8 +18,10 @@ const browser = await chromium.launch({
 try {
   const context = await browser.newContext();
   const page = await context.newPage();
+  const gatewayRequests = [];
   await page.route(GATEWAY, async (route) => {
     const body = route.request().postDataJSON?.() || {};
+    gatewayRequests.push(body);
     if (body.api_name === '/book/getprogress') {
       await route.fulfill({
         status: 200,
@@ -85,16 +87,99 @@ try {
   await page.reload({ waitUntil: 'load' });
 
   await page.waitForFunction(() => typeof window.Yueji?.reconcileWeReadFinishedBooks === 'function');
-  await page.evaluate(async () => {
-    await window.Yueji.reconcileWeReadFinishedBooks({ fetchMissingDates: true });
+  await page.waitForSelector('#wereadSettings', { state: 'attached', timeout: 15000 });
+
+  const before = await page.evaluate(() => {
+    let live = null;
+    try {
+      live = typeof state !== 'undefined' ? state : null;
+    } catch {}
+    const persisted = JSON.parse(localStorage.getItem('yueji-archive-v1') || '{}');
+    return {
+      liveBooks: (live?.books || []).map((b) => ({
+        key: b.key,
+        title: b.title,
+        weReadBookId: b.weReadBookId,
+        progress: b.progress,
+        status: b.status,
+        finishReading: b.finishReading,
+        finishedDate: b.finishedDate,
+      })),
+      liveShelf: (live?.weRead?.shelfBooks || []).map((b) => ({
+        bookId: b.bookId,
+        finishReading: b.finishReading,
+        cover: Boolean(b.cover),
+      })),
+      persistedBooks: (persisted.books || []).map((b) => ({
+        key: b.key,
+        weReadBookId: b.weReadBookId,
+        progress: b.progress,
+        status: b.status,
+      })),
+      persistedShelf: (persisted.weRead?.shelfBooks || []).length,
+      errors: window.Yueji?.errors?.history || [],
+    };
   });
+  console.log(`[finished diagnostics:before] ${JSON.stringify(before)}`);
+
+  const reconcileResult = await page.evaluate(async () =>
+    window.Yueji.reconcileWeReadFinishedBooks({ fetchMissingDates: true }),
+  );
+  const after = await page.evaluate(() => {
+    let live = null;
+    try {
+      live = typeof state !== 'undefined' ? state : null;
+    } catch {}
+    const persisted = JSON.parse(localStorage.getItem('yueji-archive-v1') || '{}');
+    return {
+      liveBooks: (live?.books || []).map((b) => ({
+        key: b.key,
+        title: b.title,
+        weReadBookId: b.weReadBookId,
+        progress: b.progress,
+        status: b.status,
+        finishReading: b.finishReading,
+        finishedDate: b.finishedDate,
+        weReadCover: Boolean(b.weReadCover),
+      })),
+      liveShelf: (live?.weRead?.shelfBooks || []).map((b) => ({
+        bookId: b.bookId,
+        finishReading: b.finishReading,
+        cover: Boolean(b.cover),
+      })),
+      persistedBooks: (persisted.books || []).map((b) => ({
+        key: b.key,
+        weReadBookId: b.weReadBookId,
+        progress: b.progress,
+        status: b.status,
+        finishedDate: b.finishedDate,
+      })),
+      persistedShelf: (persisted.weRead?.shelfBooks || []).length,
+      errors: window.Yueji?.errors?.history || [],
+    };
+  });
+  console.log(`[finished diagnostics:after] ${JSON.stringify({ reconcileResult, gatewayRequests, after })}`);
+
   await page.waitForFunction(() => {
+    try {
+      if (typeof state !== 'undefined') {
+        const book = state.books?.find((item) => item.weReadBookId === 'crime-weread');
+        if (book?.progress === 100 && book?.status === 'done' && book?.finishedDate === '2026-09-27')
+          return true;
+      }
+    } catch {}
     const data = JSON.parse(localStorage.getItem('yueji-archive-v1') || '{}');
     const book = data.books?.find((item) => item.weReadBookId === 'crime-weread');
     return book?.progress === 100 && book?.status === 'done' && book?.finishedDate === '2026-09-27';
   });
 
   const repaired = await page.evaluate(() => {
+    try {
+      if (typeof state !== 'undefined') {
+        const book = state.books?.find((item) => item.weReadBookId === 'crime-weread');
+        if (book) return book;
+      }
+    } catch {}
     const data = JSON.parse(localStorage.getItem('yueji-archive-v1') || '{}');
     return data.books.find((item) => item.weReadBookId === 'crime-weread');
   });
