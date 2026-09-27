@@ -39,9 +39,17 @@
 
   function archiveState() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      const archive = raw ? JSON.parse(raw) : null;
-      return archive && typeof archive === 'object' ? archive : null;
+      if (typeof localStorage !== 'undefined' && typeof localStorage.getItem === 'function') {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        const archive = raw ? JSON.parse(raw) : null;
+        if (archive && typeof archive === 'object') return archive;
+      }
+    } catch {}
+    // Compatibility fallback for the classic-script runtime and unit harnesses.
+    // Real browser releases prefer the persisted snapshot above so this bridge
+    // does not depend on another script's lexical binding being visible.
+    try {
+      return typeof state !== 'undefined' && state && typeof state === 'object' ? state : null;
     } catch {
       return null;
     }
@@ -54,7 +62,18 @@
       if (typeof renderAll === 'function') renderAll();
       return;
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(archive));
+    // Older classic-script builds already expose save()/renderAll(). When the
+    // archive object is the live state reference, mutating it + save() is the
+    // correct persistence path.
+    if (typeof save === 'function') {
+      save();
+      if (typeof renderAll === 'function') renderAll();
+      return;
+    }
+    try {
+      if (typeof localStorage !== 'undefined' && typeof localStorage.setItem === 'function')
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(archive));
+    } catch {}
   }
 
   function findBookByKey(key) {
@@ -163,7 +182,10 @@
           recoverable: true,
           quiet: true,
         });
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(archive));
+        try {
+          if (typeof localStorage !== 'undefined' && typeof localStorage.setItem === 'function')
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(archive));
+        } catch {}
       }
     }
     return changed;
