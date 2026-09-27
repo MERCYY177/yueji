@@ -39,3 +39,25 @@ test('missing summaries remain unknown rather than zero', () => {
   assert.equal(snapshot.overallSummary.readDays, null);
   assert.equal(snapshot.currentMonthSummary.totalReadTimeSeconds, null);
 });
+
+test('reading snapshot records which months have authoritative daily completeness', () => {
+  const annual = createReadingSnapshot({
+    annual: { dailyReadTimes: { '2026-01-03': 60 } },
+    year: 2026,
+    month: 3,
+  });
+  assert.deepEqual(annual.completeMonths, ['2026-01', '2026-02', '2026-03']);
+  assert.equal(annual.dailySource, 'annual-daily');
+
+  const fallback = createReadingSnapshot({
+    annual: {},
+    monthly: {
+      '01': { readTimes: { '2026-01-03': 60 } },
+      '02': { readTimes: {} },
+    },
+    year: 2026,
+    month: 3,
+  });
+  assert.deepEqual(fallback.completeMonths, ['2026-01', '2026-02']);
+  assert.equal(fallback.dailySource, 'monthly-fallback');
+});
