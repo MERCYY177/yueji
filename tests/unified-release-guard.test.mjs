@@ -24,6 +24,14 @@ test('unified UI keeps four primary tabs and treats incomplete calendar months a
   assert.match(unified, /全部/);
 });
 
+test('official summary waits for the primary WeRead sync to become idle', async () => {
+  const unified = await text('yueji-unified.js');
+  assert.match(unified, /function waitForPrimarySyncIdle/);
+  assert.match(unified, /wereadSyncBtn/);
+  assert.match(unified, /__yuejiWeReadSyncing/);
+  assert.match(unified, /await waitForPrimarySyncIdle\(\)/);
+});
+
 test('notes are collapsed for browsing but fully expanded only in exported note images', async () => {
   const appearance = await text('yueji-appearance.js');
   assert.match(appearance, /collapseChapterBodies/);
