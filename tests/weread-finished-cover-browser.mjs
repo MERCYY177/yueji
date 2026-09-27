@@ -84,6 +84,10 @@ try {
   );
   await page.reload({ waitUntil: 'load' });
 
+  await page.waitForFunction(() => typeof window.Yueji?.reconcileWeReadFinishedBooks === 'function');
+  await page.evaluate(async () => {
+    await window.Yueji.reconcileWeReadFinishedBooks({ fetchMissingDates: true });
+  });
   await page.waitForFunction(() => {
     const data = JSON.parse(localStorage.getItem('yueji-archive-v1') || '{}');
     const book = data.books?.find((item) => item.weReadBookId === 'crime-weread');
@@ -103,6 +107,7 @@ try {
     const year = document.getElementById('yearWallYear');
     if (year) year.value = '2026';
     window.renderYearWall?.();
+    window.Yueji?.applyYearCoverFallbacks?.();
   });
   await page.waitForFunction(() => {
     const img = document.querySelector('#yearWallPreview img[data-cover-key="crime"]');
