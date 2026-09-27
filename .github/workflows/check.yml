@@ -45,3 +45,4 @@ jobs:
             exit 1
           fi
           CHROME_BIN="$CHROME_BIN" node tests/browser-smoke.mjs
+          CHROME_BIN="$CHROME_BIN" node tests/weread-finished-cover-browser.mjs
