@@ -66,6 +66,14 @@
     )
       return String(book.weReadLastRead);
 
+    // The shelf endpoint pairs finishReading with readUpdateTime. Use that
+    // timestamp only when the same shelf row explicitly says the book is
+    // finished; never use an ordinary shelf update as completion evidence.
+    if (finishFlag(raw?.finishReading)) {
+      const shelfFinished = safeDate(raw?.readUpdateTime);
+      if (shelfFinished) return shelfFinished;
+    }
+
     return '';
   }
 
@@ -121,11 +129,23 @@
     let changed = false;
 
     for (const book of archive.books) {
-      if (book?.finishedDate) continue;
       const id = String(book?.weReadBookId || '');
       if (!id) continue;
       const raw = shelfById.get(id) || book;
       if (!completed(raw, book)) continue;
+
+      // Normalize explicit completion to the numeric value expected by older
+      // sync paths so future progress refreshes do not skip string/boolean flags.
+      if (finishFlag(raw?.finishReading) && book.finishReading !== 1) {
+        book.finishReading = 1;
+        changed = true;
+      }
+      if (finishFlag(raw?.finishReading) && raw.finishReading !== 1) {
+        raw.finishReading = 1;
+        changed = true;
+      }
+
+      if (book?.finishedDate) continue;
 
       let date = verifiedLocalFinishedDate(book, raw);
       if (!date && fetchMissingDates) {
@@ -165,6 +185,11 @@
 
       if (date) {
         book.finishedDate = date;
+        book.finishedDateSource = book.finishTime || raw.finishTime
+          ? 'weread-finish-time'
+          : finishFlag(raw?.finishReading) && raw?.readUpdateTime
+            ? 'weread-shelf-finished-read-update'
+            : 'weread-progress-update';
         changed = true;
       }
     }
