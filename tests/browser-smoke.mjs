@@ -11,6 +11,24 @@ const browser = await chromium.launch({
   args: ['--no-sandbox', '--disable-dev-shm-usage'],
 });
 
+async function runtimeDiagnostics(page, label) {
+  const result = await page.evaluate(() => ({
+    readyState: document.readyState,
+    unifiedYearCard: Boolean(document.getElementById('unifiedYearCard')),
+    unifiedExportSettings: Boolean(document.getElementById('unifiedExportSettings')),
+    exportModule: Boolean(document.getElementById('yuejiExportModule')),
+    appearanceSettings: Boolean(document.getElementById('unifiedAppearanceSettings')),
+    appearanceStyle: Boolean(document.getElementById('yuejiAppearanceStyle')),
+    exportBookPicker: Boolean(document.getElementById('yuejiExportBook')),
+    settingsSheet: Boolean(document.getElementById('settingsSheet')),
+    settingsSections: [...document.querySelectorAll('#settingsSheet .settings-section')].map((x) => x.id || x.querySelector('h4')?.textContent || ''),
+    yuejiVersion: window.Yueji?.version || '',
+    yuejiErrors: window.Yueji?.errors?.history || [],
+  }));
+  console.log(`[browser diagnostics:${label}] ${JSON.stringify(result)}`);
+  return result;
+}
+
 try {
   const context = await browser.newContext({ acceptDownloads: true });
   const page = await context.newPage();
@@ -22,7 +40,10 @@ try {
 
   await page.goto('http://127.0.0.1:4173/', { waitUntil: 'load' });
   await page.waitForSelector('#unifiedYearCard', { timeout: 15000 });
-  await page.waitForSelector('#yuejiExportModule', { state: 'attached', timeout: 15000 });
+  await page.waitForTimeout(600);
+  const initialDiagnostics = await runtimeDiagnostics(page, 'initial');
+  if (!initialDiagnostics.exportModule)
+    throw new Error(`Export module did not mount: ${JSON.stringify(initialDiagnostics)}`);
 
   const navLabels = await page.locator('.bottom-nav .nav-btn').allTextContents();
   assert.equal(navLabels.length, 4, `expected four primary tabs, got ${navLabels.length}`);
