@@ -35,6 +35,7 @@ function injectFixStyles() {
   style.textContent = `
     .feature-panel{background:var(--card)!important;color:var(--ink)!important}
     .feature-panel-head{background:color-mix(in srgb,var(--card) 92%,transparent)!important;color:var(--ink)!important}
+    .yueji-annual-hide{display:none!important}
     .unified-summary-grid.annual-two-column{grid-template-columns:repeat(2,minmax(0,1fr))!important}
     .local-finished-books{margin-top:18px;padding-top:18px;border-top:1px solid var(--line)}
     .local-finished-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px}
@@ -68,11 +69,17 @@ function renderLocalFinishedBooks(card) {
     card.insertBefore(section, calendar || card.querySelector('.unified-sync-note') || null);
   }
   const finished = readLocalBooks().filter(isFinishedBook);
-  section.querySelector('[data-local-finished-count]').textContent = `${finished.length} 本`;
+  const count = section.querySelector('[data-local-finished-count]');
   const grid = section.querySelector('.local-finished-grid');
-  grid.innerHTML = finished.length
+  const nextCount = `${finished.length} 本`;
+  const nextHtml = finished.length
     ? finished.map(finishedBookCard).join('')
     : '<div class="empty-text">还没有可确认的已读书籍。</div>';
+  if (count.textContent !== nextCount) count.textContent = nextCount;
+  if (grid.dataset.renderedHtml !== nextHtml) {
+    grid.innerHTML = nextHtml;
+    grid.dataset.renderedHtml = nextHtml;
+  }
 }
 
 function cleanYearOverview() {
@@ -81,11 +88,12 @@ function cleanYearOverview() {
   const grid = card.querySelector('.unified-summary-grid');
   if (grid) {
     grid.classList.add('annual-two-column');
-    grid.querySelector('[data-kpi="books"]')?.closest('.unified-summary-item')?.remove();
-    grid.querySelector('[data-kpi="finished"]')?.closest('.unified-summary-item')?.remove();
+    grid.querySelector('[data-kpi="books"]')?.closest('.unified-summary-item')?.classList.add('yueji-annual-hide');
+    grid.querySelector('[data-kpi="finished"]')?.closest('.unified-summary-item')?.classList.add('yueji-annual-hide');
   }
   const subtitle = card.querySelector('.section-sub');
-  if (subtitle) subtitle.textContent = '微信读书官方阅读时长与天数 + 阅迹本地已读书籍 + 真实日级日历';
+  const nextSubtitle = '微信读书官方阅读时长与天数 + 阅迹本地已读书籍 + 真实日级日历';
+  if (subtitle && subtitle.textContent !== nextSubtitle) subtitle.textContent = nextSubtitle;
   renderLocalFinishedBooks(card);
   return true;
 }
@@ -96,11 +104,12 @@ function cleanOfficialStats() {
   const grid = card.querySelector('.unified-summary-grid');
   if (grid) {
     grid.classList.add('annual-two-column');
-    grid.querySelector('[data-official-books]')?.closest('.unified-summary-item')?.remove();
-    grid.querySelector('[data-official-finished]')?.closest('.unified-summary-item')?.remove();
+    grid.querySelector('[data-official-books]')?.closest('.unified-summary-item')?.classList.add('yueji-annual-hide');
+    grid.querySelector('[data-official-finished]')?.closest('.unified-summary-item')?.classList.add('yueji-annual-hide');
   }
   const small = card.querySelector('.unified-official-title small');
-  if (small) small.textContent = '只展示微信稳定返回的汇总字段';
+  const stableText = '只展示微信稳定返回的汇总字段';
+  if (small && small.textContent !== stableText) small.textContent = stableText;
   const note = card.querySelector('[data-official-note]');
   if (note && /没有返回的字段|缺失字段/.test(note.textContent || '')) {
     note.textContent = (note.textContent || '')
@@ -118,9 +127,12 @@ function applyFixes() {
 }
 
 function install() {
-  applyFixes();
-  const observer = new MutationObserver(() => applyFixes());
-  observer.observe(document.body, { childList: true, subtree: true });
+  if (!applyFixes()) {
+    const observer = new MutationObserver(() => {
+      if (applyFixes()) observer.disconnect();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
   window.addEventListener('yueji:reading-summary', () => queueMicrotask(applyFixes));
   window.addEventListener('storage', (event) => {
     if (event.key === ARCHIVE_KEY) applyFixes();
