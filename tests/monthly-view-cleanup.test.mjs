@@ -18,3 +18,7 @@ test('monthly summary removes WeRead snapshot-ranking disclaimers', () => {
   assert.match(source, /微信读书没有提供逐书分钟/);
   assert.match(source, /MutationObserver/);
 });
+
+test('monthly summary removes local journal count copy', () => {
+  assert.match(source, /留下了.*篇手记/);
+});
