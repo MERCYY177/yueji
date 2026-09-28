@@ -126,6 +126,7 @@
     const cleanSummary = () => {
       const current = summary.textContent || '';
       const cleaned = current
+        .replace(/，留下了\s*\d+\s*篇手记。?/g, '。')
         .replace(/微信进度记录显示《[^》]+》较活跃，但微信总时长无法按书拆分。/g, '')
         .replace(/微信读书没有提供逐书分钟，因此不生成虚假的图书排行。/g, '');
       if (cleaned !== current) summary.textContent = cleaned;
