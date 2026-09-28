@@ -66,7 +66,7 @@
   };
 
   window.Yueji = Object.assign(existing, {
-    version: '20260927-finished-shelf',
+    version: '20260928-annual-ui',
     errors,
     boot,
     wereadGateway: WEREAD_GATEWAY,
@@ -101,6 +101,7 @@
   });
   import('./yueji-sync-gate.js?v=20260927-unified')
     .then(() => import('./yueji-unified.js?v=20260927-unified'))
+    .then(() => import('./yueji-annual-ui-fix.js?v=20260928-annual-ui'))
     .then(() => import('./yueji-stats-calendar.js?v=20260927-stats-calendar'))
     .catch((error) => {
       errors.capture(error, { area: 'ui', stage: 'unified-layout', recoverable: true });
