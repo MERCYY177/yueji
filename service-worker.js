@@ -1,4 +1,4 @@
-const CACHE = 'yueji-shell-20260927-finished-shelf';
+const CACHE = 'yueji-shell-20260928-annual-ui';
 const SHELL = [
   './',
   './index.html',
@@ -25,6 +25,7 @@ const SHELL = [
   './yueji-unified-ui-model.js',
   './yueji-sync-gate.js',
   './yueji-unified.js',
+  './yueji-annual-ui-fix.js',
   './yueji-stats-calendar.js',
   './yueji-appearance-model.js',
   './yueji-appearance.js',
