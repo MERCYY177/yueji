@@ -11,5 +11,6 @@ assert.match(source, /unifiedYearCard/, 'the existing annual calendar node must 
 assert.match(source, /insertAdjacentElement\(['"]afterend['"],\s*annual\)/, 'the annual calendar must be physically moved into statistics');
 assert.match(source, /annualCard\.hidden\s*=\s*tab\s*!==\s*['"]year['"]/, 'the annual calendar must only show on the year stats tab');
 assert.match(source, /monthCard\.hidden\s*=\s*tab\s*!==\s*['"]month['"]/, 'the month calendar must only show on the month stats tab');
+assert.match(source, /officialCard\.hidden\s*=\s*tab\s*===\s*['"]year['"]/, 'the standalone official summary must hide on the year tab because the annual card already contains those metrics');
 assert.match(source, /tab\s*!==\s*['"]month['"]\)\s*return/, 'all-time stats must not show a reading calendar');
 assert.match(source, /statsCalendarCard/, 'statistics page must have a dedicated month calendar card');
