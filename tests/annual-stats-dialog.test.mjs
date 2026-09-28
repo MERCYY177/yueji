@@ -27,6 +27,14 @@ test('year overview uses local finished-book state instead of missing official b
   assert.match(fix, /local-finished-grid/);
 });
 
+test('monthly summary and reading-word cards are removed from the visible UI', () => {
+  assert.match(fix, /monthSummary/);
+  assert.match(fix, /closest\(['"]\.card['"]\)\?\.classList\.add\(['"]yueji-annual-hide['"]\)/);
+  assert.match(fix, /阅读字数/);
+  assert.match(fix, /#kpiGrid\s+\.kpi/);
+  assert.match(fix, /#monthlyKpis\s+\.monthly-kpi/);
+});
+
 test('annual cleanup loads immediately after the unified summary module', () => {
   assert.match(core, /yueji-unified\.js[^']*'\)\)\s*\.then\(\(\) => import\('\.\/yueji-annual-ui-fix\.js/);
 });

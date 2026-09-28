@@ -119,20 +119,27 @@ function cleanOfficialStats() {
   return true;
 }
 
+function cleanLegacyMetrics() {
+  document.getElementById('monthSummary')?.closest('.card')?.classList.add('yueji-annual-hide');
+  document.querySelectorAll('#kpiGrid .kpi, #monthlyKpis .monthly-kpi').forEach((card) => {
+    if ([...card.querySelectorAll('span')].some((span) => (span.textContent || '').includes('阅读字数'))) {
+      card.classList.add('yueji-annual-hide');
+    }
+  });
+}
+
 function applyFixes() {
   injectFixStyles();
+  cleanLegacyMetrics();
   const yearReady = cleanYearOverview();
   const officialReady = cleanOfficialStats();
   return yearReady && officialReady;
 }
 
 function install() {
-  if (!applyFixes()) {
-    const observer = new MutationObserver(() => {
-      if (applyFixes()) observer.disconnect();
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-  }
+  applyFixes();
+  const observer = new MutationObserver(() => applyFixes());
+  observer.observe(document.body, { childList: true, subtree: true });
   window.addEventListener('yueji:reading-summary', () => queueMicrotask(applyFixes));
   window.addEventListener('storage', (event) => {
     if (event.key === ARCHIVE_KEY) applyFixes();
