@@ -56,10 +56,12 @@ function relocateAnnualCard() {
 function renderStatsCalendars(snapshot = loadSummary()) {
   const monthCard = document.getElementById('statsCalendarCard');
   const annualCard = document.getElementById('unifiedYearCard');
+  const officialCard = document.getElementById('unifiedOfficialStats');
   if (!monthCard) return;
   const tab = activeStatsTab();
   monthCard.hidden = tab !== 'month';
   if (annualCard) annualCard.hidden = tab !== 'year';
+  if (officialCard) officialCard.hidden = tab === 'year';
   if (tab !== 'month') return;
   const year = Number(snapshot?.year) || new Date().getFullYear();
   const month = Number(snapshot?.month) || new Date().getMonth() + 1;
