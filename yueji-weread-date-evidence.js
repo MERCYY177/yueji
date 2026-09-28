@@ -139,6 +139,7 @@
     });
   }
 
+  if (typeof document === 'undefined') return;
   if (document.readyState === 'loading')
     document.addEventListener('DOMContentLoaded', installMonthlyPresentationCleanup, { once: true });
   else installMonthlyPresentationCleanup();
