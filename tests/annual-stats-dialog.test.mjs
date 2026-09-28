@@ -13,7 +13,7 @@ test('feature dialogs use a real theme background and readable text', () => {
 test('official WeRead stats hide unavailable book totals instead of showing misleading blanks', () => {
   assert.match(fix, /data-official-books/);
   assert.match(fix, /data-official-finished/);
-  assert.match(fix, /closest\('\.unified-summary-item'\)\?\.remove\(\)/);
+  assert.match(fix, /classList\.add\('yueji-annual-hide'\)/);
   assert.match(fix, /只展示微信稳定返回的汇总字段/);
 });
 
